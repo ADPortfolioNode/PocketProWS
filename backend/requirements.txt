@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+chromadb==0.5.3
+httpx
+pydantic
+python-multipart
+python-dotenv
