@@ -28,7 +28,7 @@ Constraints, same as the other PocketPro apps:
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r backend/requirements-dev.txt
 cd frontend && npm install && npm run build && cd ..
-./start-dev.sh   # backend :5003, frontend :3003 (Vite dev, proxies /api); each port bumps +1 while taken, never stops another app
+./start-dev.sh   # backend :5003, frontend :3003 (Vite dev, proxies /api)
 ./stop-dev.sh
 ```
 

@@ -123,6 +123,19 @@ def count_profile_chunks(profile_id, doc_id=None, kind=None):
         return 0
 
 
+def list_profile_chunk_doc_ids(profile_id):
+    """Every doc_id that has chunks indexed for this profile. Used by the
+    resource-integrity check to spot RAG entries for documents that no
+    longer exist (e.g. a deleted document that was never de-indexed)."""
+    col = get_profiles_collection()
+    try:
+        res = col.get(where={"profile_id": profile_id}, limit=10000)
+    except Exception:  # noqa: BLE001 - a missing collection reads as none
+        return set()
+    return {m.get("doc_id") for m in (res.get("metadatas") or [])
+            if m and m.get("doc_id")}
+
+
 def delete_profile_doc_chunks(profile_id, doc_id):
     col = get_profiles_collection()
     try:

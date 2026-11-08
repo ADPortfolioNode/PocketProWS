@@ -121,7 +121,8 @@ def run_search_agent(profile_id: str, connectors=None, limit: int = 5) -> dict:
         report = {"agent": "search", "ran_at": _now_iso(), "profile_id": profile_id,
                   "summary": "No target roles set for this client yet — finish the "
                              "interview first, then I can search for them.",
-                  "counts": {}, "new_jobs": 0, "total_found": 0}
+                  "counts": {}, "new_jobs": 0, "total_found": 0,
+                  "integrity": check_search_integrity(profile)}
         return _record_run(profile_id, report)
     query = roles[0]
     location = client.get("location") or ""
@@ -157,7 +158,8 @@ def run_search_agent(profile_id: str, connectors=None, limit: int = 5) -> dict:
                           f"for {client.get('name') or profile_id}. "
                           f"Working sources: {', '.join(ok) or 'none'}."),
               "counts": counts, "new_jobs": len(new_jobs), "total_found": total,
-              "new_job_titles": [j.get("title", "") for j in new_jobs]}
+              "new_job_titles": [j.get("title", "") for j in new_jobs],
+              "integrity": check_search_integrity(profiles_mod.get_profile(profile_id))}
     return _record_run(profile_id, report)
 
 
@@ -177,7 +179,12 @@ def set_application_status(profile_id: str, job_id: str, status: str,
         return {"error": "job not found in this profile's saved jobs"}
     _ensure_job_status(job)
     current = _job_status(job)
-    if status != current and status not in VALID_TRANSITIONS.get(current, set()):
+    if status == current:
+        # Re-setting the same status is a no-op — it must not append a
+        # duplicate history entry.
+        return {"job": job, "pipeline": application_pipeline(p),
+                "note": f"already '{status}' — no change recorded"}
+    if status not in VALID_TRANSITIONS.get(current, set()):
         return {"error": (f"cannot move a job from '{current}' to '{status}'; "
                           f"valid next steps from '{current}': "
                           f"{sorted(VALID_TRANSITIONS.get(current, set())) or 'none — terminal'}")}
@@ -215,7 +222,7 @@ def follow_up_due(profile: dict, days: int = DEFAULT_FOLLOW_UP_DAYS,
         if last is None:
             continue
         if (now - last).days >= days:
-            due.append(job)
+            due.append({**job, "draft": _draft_follow_up(profile, job)})
     return due
 
 
@@ -250,7 +257,8 @@ def run_follow_up_agent(profile_id: str, days: int = DEFAULT_FOLLOW_UP_DAYS) -> 
                        "company": j.get("company", ""),
                        "status": _job_status(j),
                        "last_status_at": j.get("last_status_at"),
-                       "draft": j.get("follow_up_draft", "")} for j in due]}
+                       "draft": j.get("follow_up_draft", "")} for j in due],
+              "integrity": check_follow_up_integrity(profiles_mod.get_profile(profile_id))}
     return _record_run(profile_id, report)
 
 
@@ -291,20 +299,182 @@ def run_resource_agent(profile_id: str) -> dict:
               "documents": checked,
               "document_count": len(docs),
               "healthy_count": ok,
-              "interview_notes_in_rag": interview_notes}
+              "interview_notes_in_rag": interview_notes,
+              "integrity": check_resource_integrity(profile)}
+    return _record_run(profile_id, report)
+
+
+# ------------------------------------------------------- workflow integrity
+# Each agent verifies the integrity of the workflow it operates on when it
+# runs. Local-only: these read the profile's own jobs / documents / RAG and
+# report problems in the concierge status — nothing is sent anywhere.
+# (Anthony's rule: no client metadata leaves the machine without his say-so;
+# a job search sends only the role / location as typed for the search.)
+# A failed check must be reported in the concierge status, never silently
+# passed — profile_status() surfaces it and status_summary_text() says so.
+
+def check_search_integrity(profile: dict) -> dict:
+    """Saved jobs: de-duplicated, scoped to this profile, and each one has
+    the fields the pipeline needs."""
+    problems = []
+    jobs = profile.get("saved_jobs") or []
+    seen_ids = set()
+    for job in jobs:
+        jid = job.get("id") or "(no id)"
+        missing = [f for f in ("id", "title", "company", "source",
+                               "application_status") if not job.get(f)]
+        if missing:
+            problems.append(f"saved job {jid}: missing field(s) {', '.join(missing)}")
+        if jid in seen_ids:
+            problems.append(f"saved job {jid}: duplicate — saved twice for this profile")
+        seen_ids.add(jid)
+    # Scope is structural: saved_jobs live on the profile itself, so a job
+    # can only be listed under the profile that saved it. Two profiles may
+    # legitimately save the same posting for two different clients, so a
+    # shared job id across profiles is NOT a problem.
+    return {"agent": "search", "passed": not problems, "problems": problems}
+
+
+def check_application_integrity(profile: dict) -> dict:
+    """Every status transition in each job's history is a legal move (no
+    skipped steps, no moves out of a terminal hired/rejected state), the
+    current status matches the last history entry, and pipeline counts
+    match the actual saved jobs."""
+    problems = []
+    jobs = profile.get("saved_jobs") or []
+    for job in jobs:
+        jid = job.get("id") or "(no id)"
+        status = job.get("application_status") or ""
+        if status not in APPLICATION_STATUSES:
+            problems.append(f"saved job {jid}: unknown application_status '{status}'")
+            continue
+        history = job.get("status_history") or []
+        prev = "saved"
+        for entry in history:
+            nxt = entry.get("status")
+            if prev in ("hired", "rejected"):
+                problems.append(f"saved job {jid}: history moves out of terminal "
+                                f"state '{prev}' to '{nxt}'")
+            elif nxt == prev:
+                problems.append(f"saved job {jid}: duplicate history entry "
+                                f"'{nxt}' (no move)")
+            elif nxt not in VALID_TRANSITIONS.get(prev, set()):
+                problems.append(f"saved job {jid}: illegal history move "
+                                f"'{prev}' -> '{nxt}'")
+            prev = nxt
+        if history and history[-1].get("status") != status:
+            problems.append(f"saved job {jid}: current status '{status}' does not "
+                            f"match last history entry '{history[-1].get('status')}'")
+        if status == "applied" and not job.get("applied_at"):
+            problems.append(f"saved job {jid}: status 'applied' but no applied_at date")
+    counts = application_pipeline(profile)["counts"]
+    actual = {s: 0 for s in APPLICATION_STATUSES}
+    for job in jobs:
+        if job.get("application_status") in actual:
+            actual[job["application_status"]] += 1
+    if counts != actual:
+        problems.append(f"pipeline counts {counts} do not match saved jobs {actual}")
+    return {"agent": "application", "passed": not problems, "problems": problems}
+
+
+def check_follow_up_integrity(profile: dict) -> dict:
+    """Follow-up dues are computed from real status dates, and every due
+    job still exists in saved jobs."""
+    problems = []
+    jobs = profile.get("saved_jobs") or []
+    job_ids = {j.get("id") for j in jobs}
+    due = follow_up_due(profile)
+    for job in due:
+        if job.get("id") not in job_ids:
+            problems.append(f"follow-up due for job {job.get('id')}: not in saved jobs")
+        if _parse_iso(job.get("last_status_at") or job.get("applied_at") or "") is None:
+            problems.append(f"saved job {job.get('id')}: listed due for follow-up "
+                            f"with no recorded status date")
+    for job in jobs:
+        if _job_status(job) in ("applied", "interviewing"):
+            if _parse_iso(job.get("last_status_at") or job.get("applied_at") or "") is None:
+                problems.append(f"saved job {job.get('id')}: in "
+                                f"'{_job_status(job)}' with no recorded status "
+                                f"date — follow-up cannot be computed")
+    return {"agent": "follow_up", "passed": not problems, "problems": problems}
+
+
+def check_resource_integrity(profile: dict) -> dict:
+    """Documents, digests, and RAG chunks agree: a document listed as
+    healthy actually has a digest + chunks, and nothing is indexed in RAG
+    for a deleted document."""
+    problems = []
+    pid = profile["id"]
+    docs = profile.get("documents") or []
+    doc_ids = {d["id"] for d in docs}
+    for doc in docs:
+        chunks = vs.count_profile_chunks(pid, doc["id"])
+        digest = doc.get("digest") or {}
+        if doc.get("text_chars") and chunks == 0:
+            problems.append(f"document {doc['id']} ({doc.get('title', '')}): "
+                            f"listed on file but has no RAG chunks")
+        if not doc.get("text_chars"):
+            problems.append(f"document {doc['id']} ({doc.get('title', '')}): "
+                            f"no text extracted")
+        if not digest.get("skills") and not digest.get("email"):
+            problems.append(f"document {doc['id']} ({doc.get('title', '')}): "
+                            f"digest missing (no skills or contact)")
+    indexed = vs.list_profile_chunk_doc_ids(pid)
+    # Interview notes are indexed under doc_id "interview-<key>", not a document.
+    orphans = sorted(d for d in indexed
+                     if d not in doc_ids and not str(d).startswith("interview-"))
+    for orphan in orphans:
+        problems.append(f"RAG has chunks for deleted/missing document {orphan}")
+    return {"agent": "resource", "passed": not problems, "problems": problems}
+
+
+def check_workflow_integrity(profile_id: str) -> dict:
+    """Overall integrity summary for one profile, across all four agents."""
+    profile = profiles_mod.get_profile(profile_id)
+    if not profile:
+        return {"passed": False, "problems": ["profile not found"], "by_agent": {}}
+    by_agent = {
+        "search": check_search_integrity(profile),
+        "application": check_application_integrity(profile),
+        "follow_up": check_follow_up_integrity(profile),
+        "resource": check_resource_integrity(profile),
+    }
+    problems = [p for r in by_agent.values() for p in r["problems"]]
+    return {"passed": not problems, "problems": problems, "by_agent": by_agent}
+
+
+def run_application_agent(profile_id: str) -> dict:
+    """Application agent run: verify the pipeline's integrity and record it.
+    The agent itself is event-driven (status changes), so this run is a
+    verification pass over the recorded history and counts."""
+    profile = profiles_mod.get_profile(profile_id)
+    if not profile:
+        return {"agent": "application", "ran_at": _now_iso(), "profile_id": profile_id,
+                "error": "profile not found"}
+    integ = check_application_integrity(profile)
+    pipe = application_pipeline(profile)
+    report = {"agent": "application", "ran_at": _now_iso(), "profile_id": profile_id,
+              "summary": (f"Application pipeline checked: {pipe['total']} saved "
+                          f"job(s). " + ("Integrity OK." if integ["passed"]
+                                         else "Integrity FAILED: " +
+                                         "; ".join(integ["problems"]))),
+              "pipeline": pipe,
+              "integrity": integ}
     return _record_run(profile_id, report)
 
 
 # ------------------------------------------------------------- run + status
 def run_agents(profile_id: str, agents=None, follow_up_days: int = DEFAULT_FOLLOW_UP_DAYS,
                connectors=None, limit: int = 5) -> dict:
-    """Run the requested agents (default: search, follow_up, resource).
-    The application agent is event-driven (status changes), so it is not
-    run here — its pipeline is included in the status instead."""
-    wanted = agents or ["search", "follow_up", "resource"]
+    """Run the requested agents (default: search, application, follow_up,
+    resource). The application agent is event-driven (status changes), so
+    its run here is a verification pass over the pipeline's integrity."""
+    wanted = agents or ["search", "application", "follow_up", "resource"]
     reports = []
     if "search" in wanted:
         reports.append(run_search_agent(profile_id, connectors=connectors, limit=limit))
+    if "application" in wanted:
+        reports.append(run_application_agent(profile_id))
     if "follow_up" in wanted:
         reports.append(run_follow_up_agent(profile_id, days=follow_up_days))
     if "resource" in wanted:
@@ -342,8 +512,9 @@ def profile_status(profile_id: str, follow_up_days: int = DEFAULT_FOLLOW_UP_DAYS
                                 "company": j.get("company", ""),
                                 "status": _job_status(j),
                                 "last_status_at": j.get("last_status_at"),
-                                "draft": j.get("follow_up_draft", "")} for j in due],
+                                "draft": j.get("draft") or j.get("follow_up_draft", "")} for j in due],
             "follow_up_days": follow_up_days,
+            "integrity": check_workflow_integrity(profile_id),
             "resources": {"document_count": resource["document_count"],
                           "healthy_count": resource["healthy_count"],
                           "interview_notes_in_rag": resource["interview_notes_in_rag"],
@@ -374,6 +545,12 @@ def status_summary_text(status: dict) -> str:
     lines.append(f"Resources: {res['document_count']} document(s), "
                  f"{res['healthy_count']} healthy in RAG, "
                  f"{res['interview_notes_in_rag']} interview note(s) in RAG.")
+    integ = status.get("integrity") or {}
+    if integ and not integ.get("passed", True):
+        # A failed integrity check is reported, never silently passed.
+        lines.append("Workflow integrity check FAILED: " + "; ".join(integ["problems"]))
+    elif integ:
+        lines.append("Workflow integrity check: passed.")
     for run in status["last_runs"][:3]:
         lines.append(f"Last {run['agent']} run ({run.get('ran_at', '')[:16]}): {run.get('summary', '')}")
     return "\n".join(lines)

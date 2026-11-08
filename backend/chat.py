@@ -13,19 +13,31 @@ Keyless retrieved-text fallback (PocketPro pattern). Two modes:
   match. Without a profile selected, it answers from saved jobs only and
   says so — it never mixes one profile's data into another's answers.
 """
+import re
+
 from . import profiles as profiles_mod
 from .vector_store import search_jobs_text, search_profile_text
 
-STATUS_WORDS = ("status", "how are we doing", "how is it going", "progress",
-                "update", "follow-up", "follow up", "followup", "pipeline",
-                "where are we", "what's happening", "whats happening")
+# Status routing: short words match as whole words only, so "update my
+# resume" does NOT route to status ("update" is not a status word at all).
+STATUS_PHRASES = ("how are we doing", "how is it going", "follow-up",
+                  "follow up", "followup", "where are we",
+                  "what's happening", "whats happening")
+STATUS_WORDS = ("status", "progress", "pipeline")
+
+
+def _is_status_question(q: str) -> bool:
+    lower = q.lower()
+    if any(p in lower for p in STATUS_PHRASES):
+        return True
+    return any(re.search(rf"\b{re.escape(w)}\b", lower) for w in STATUS_WORDS)
 
 
 def answer(question: str, profile_id: str = "", mode: str = "") -> dict:
     q = (question or "").strip()
     # Status questions go to the workflow agents' live status — real
     # numbers for the active profile, no LLM key needed.
-    if profile_id and q and any(w in q.lower() for w in STATUS_WORDS):
+    if profile_id and q and _is_status_question(q):
         from . import agents as agents_mod
         st = agents_mod.profile_status(profile_id)
         if "error" not in st:
@@ -41,6 +53,12 @@ def answer(question: str, profile_id: str = "", mode: str = "") -> dict:
             return {"answer": st["next_question"] or "Interview complete!",
                     "jobs": [], "mode": "interview", "interview": st}
         res = profiles_mod.answer_interview(profile_id, q)
+        if res.get("error"):
+            return {"answer": res["error"] + " — please answer the question.",
+                    "jobs": [], "mode": "interview",
+                    "interview": {"error": res["error"],
+                                  "next_question": res.get("next_question"),
+                                  "step": res.get("step"), "total": res.get("total")}}
         if res.get("complete"):
             text = f"All done — thank you! {res['saved']} Here's what I have for you: {res['summary']}"
         else:

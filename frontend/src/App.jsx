@@ -66,6 +66,7 @@ export default function App() {
     // Header first (fresh from the store), then every profile-scoped panel.
     await loadHeader();
     const p = await fetch(`/api/profiles/${id}`).then((x) => x.json()).catch(() => null);
+    if (!p || p.detail) { setActive(null); setInterview(null); setDocs([]); return; }
     setActive(p);
     if (p?.header) setHeader(p.header);
     const iv = await fetch(`/api/profiles/${id}/interview`).then((x) => x.json()).catch(() => null);
@@ -86,7 +87,10 @@ export default function App() {
   if (!ready) return <main><h1>PocketProWS</h1><p>Starting up…</p></main>;
 
   const switchProfile = async (id) => {
-    if (!id) { setActiveId(""); setActive(null); setHeader(null); return; }
+    if (!id) {
+      await fetch("/api/profiles/active", { method: "DELETE" });
+      setActiveId(""); setActive(null); setHeader(null); return;
+    }
     // Tell the server which profile is active, then re-render everything
     // (header + all panels) from that profile's own data.
     await fetch("/api/profiles/active", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile_id: id }) });
@@ -94,8 +98,11 @@ export default function App() {
   };
 
   const createProfile = async () => {
+    // An empty name is allowed: the interview's first question is the
+    // client's name, so a nameless profile gets named on Q1.
     const r = await fetch("/api/profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName }) });
     const p = await r.json();
+    if (!p.id) return; // server rejected it (e.g. empty name) — stay put
     setNewName("");
     await loadProfiles();
     await switchProfile(p.id);
@@ -104,6 +111,7 @@ export default function App() {
   const deleteProfile = async () => {
     if (!activeId || !window.confirm(`Delete the profile for ${header?.client_name || "this client"} and all of their documents, interview answers and saved jobs?`)) return;
     await fetch(`/api/profiles/${activeId}`, { method: "DELETE" });
+    await fetch("/api/profiles/active", { method: "DELETE" });
     setActiveId("");
     setHeader(null);
     await loadProfiles();
@@ -111,14 +119,20 @@ export default function App() {
   };
 
   const answerInterview = async () => {
+    if (!interviewA.trim()) return;
     const r = await fetch(`/api/profiles/${activeId}/interview/answer`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ answer: interviewA }) });
     const res = await r.json();
-    setChatA({ answer: res.complete ? `All done — thank you! ${res.saved} ${res.summary || ""}` : `${res.saved} Next: ${res.next_question}` });
+    if (res.error || res.detail) {
+      setChatA({ answer: `⚠ ${res.error || res.detail}` });
+    } else {
+      setChatA({ answer: res.complete ? `All done — thank you! ${res.saved} ${res.summary || ""}` : `${res.saved} Next: ${res.next_question}` });
+    }
     setInterviewA("");
     loadActive(activeId);
   };
 
   const ask = async () => {
+    if (!chatQ.trim()) return;
     const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: chatQ, profile_id: activeId }) });
     setChatA(await r.json());
     setChatQ("");
@@ -229,8 +243,11 @@ export default function App() {
         <section>
           <h2>Agents — workflow status for {status.client_name || activeId}</h2>
           <p>The agents run on demand and report here — the same status the concierge reports when you ask “what’s the status?” Applying to an employer stays outside the app; the agents record what happened, they never submit an application.</p>
-          <button onClick={runAgents}>Run agents (search · follow-up · resources)</button>
+          <button onClick={runAgents}>Run agents (search · application · follow-up · resources)</button>
           {agentMsg && <p>{agentMsg}</p>}
+          {status.integrity && (status.integrity.passed
+            ? <p>✓ Workflow integrity check: passed.</p>
+            : <p>⚠ Workflow integrity check FAILED: {status.integrity.problems.join("; ")}</p>)}
           <p><strong>Pipeline:</strong> {status.pipeline.total} saved job(s) — {Object.entries(status.pipeline.counts).map(([k, v]) => `${v} ${k}`).join(", ")}.</p>
           {status.follow_ups_due.length > 0 ? (
             <div><p><strong>Follow-ups due ({status.follow_ups_due.length}):</strong></p>

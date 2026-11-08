@@ -123,10 +123,13 @@ def _blank_client() -> dict:
 
 
 def create_profile(name: str = "") -> dict:
+    # An empty name is allowed on purpose: the interview's first question
+    # IS the client's name, so a profile can be created nameless and the
+    # concierge fills it in on Q1. (Audit 2026-11-08: not a defect.)
     profiles = _load()
     pid = uuid.uuid4().hex[:12]
     client_data = _blank_client()
-    client_data["name"] = name or ""
+    client_data["name"] = name.strip()
     profile = {"id": pid, "client": client_data,
                "interview_step": 0, "interview_answers": {},
                "documents": [], "saved_jobs": [],
@@ -361,6 +364,10 @@ def answer_interview(profile_id: str, answer: str) -> dict:
         return {"complete": True, "saved": "", "next_question": None,
                 "summary": interview_summary(p)}
     q = INTERVIEW_QUESTIONS[step]
+    if not (answer or "").strip():
+        return {"error": "answer was empty — nothing was saved",
+                "complete": False, "saved": "", "next_question": q["question"],
+                "step": step, "total": len(INTERVIEW_QUESTIONS)}
     saved = _parse_answer(q["key"], answer, p["client"])
     p["interview_answers"][q["key"]] = (answer or "").strip()
     p["interview_step"] = step + 1
@@ -453,17 +460,29 @@ def _merge_digest(profile: dict, digest: dict) -> None:
             p["education"].append(e)
 
 
+# File types the document pipeline can actually read. Anything else is
+# rejected at upload instead of being stored as garbage text.
+ALLOWED_UPLOAD_SUFFIXES = {".txt", ".md", ".csv", ".docx", ".pdf"}
+
+
 def add_document(profile_id: str, filename: str, data: bytes) -> dict:
     profiles = _load()
     p = profiles.get(profile_id)
     if not p:
         return {"error": "profile not found"}
+    # Sanitize: strip any directory components so a crafted name like
+    # "../../x.txt" can never escape the profile's docs folder.
+    safe_name = Path(filename or "").name.strip()
+    if not safe_name:
+        return {"error": "a file name is required"}
+    if Path(safe_name).suffix.lower() not in ALLOWED_UPLOAD_SUFFIXES:
+        return {"error": f"unsupported file type: {Path(safe_name).suffix or '(none)'} — upload .txt, .md, .csv, .docx or .pdf"}
     doc_id = uuid.uuid4().hex[:12]
-    path = _docs_dir(profile_id) / f"{doc_id}-{filename}"
+    path = _docs_dir(profile_id) / f"{doc_id}-{safe_name}"
     path.write_bytes(data)
-    text = extract_text(data, filename)
+    text = extract_text(data, safe_name)
     digest = digest_text(text)
-    doc = {"id": doc_id, "filename": filename, "title": filename,
+    doc = {"id": doc_id, "filename": safe_name, "title": safe_name,
            "size": len(data), "text_chars": len(text), "digest": digest,
            "notes": ""}
     p["documents"].append(doc)
@@ -489,7 +508,13 @@ def edit_document(profile_id: str, doc_id: str, patch: dict, data: bytes = None,
         doc["notes"] = patch["notes"]
     if data is not None:
         vs.delete_profile_doc_chunks(profile_id, doc_id)
-        new_name = filename or doc["filename"]
+        new_name = Path(filename or doc["filename"]).name.strip() or doc["filename"]
+        if Path(new_name).suffix.lower() not in ALLOWED_UPLOAD_SUFFIXES:
+            return {"error": f"unsupported file type: {Path(new_name).suffix or '(none)'} — upload .txt, .md, .csv, .docx or .pdf"}
+        # Remove the old stored file(s) first so a replaced version does
+        # not linger on disk under the old name.
+        for stale in _docs_dir(profile_id).glob(f"{doc_id}-*"):
+            stale.unlink(missing_ok=True)
         path = _docs_dir(profile_id) / f"{doc_id}-{new_name}"
         path.write_bytes(data)
         text = extract_text(data, new_name)

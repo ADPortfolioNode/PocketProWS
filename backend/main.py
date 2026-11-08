@@ -109,10 +109,18 @@ def jobs_search(q: str = "", location: str = "", limit: int = 10, source: str = 
             "results": results, "profile_id": profile_id}
 
 
+def _err_status(err: str) -> int:
+    """Validation errors are 400; only a missing profile is 404."""
+    return 404 if "profile not found" in err else 400
+
+
 # ------------------------------------------------------------ profiles
 @app.post("/api/profiles")
 def create_profile(payload: dict):
-    return profiles_mod.create_profile(payload.get("name", ""))
+    res = profiles_mod.create_profile(payload.get("name", ""))
+    if "error" in res:
+        raise HTTPException(400, res["error"])
+    return res
 
 
 @app.get("/api/profiles")
@@ -194,7 +202,7 @@ def interview_get(profile_id: str):
 def interview_answer(profile_id: str, payload: dict):
     res = profiles_mod.answer_interview(profile_id, payload.get("answer", ""))
     if "error" in res:
-        raise HTTPException(404, res["error"])
+        raise HTTPException(_err_status(res["error"]), res["error"])
     return res
 
 
@@ -269,7 +277,7 @@ def follow_ups_get(profile_id: str, days: int = 7):
                      "company": j.get("company", ""),
                      "status": agents_mod._job_status(j),
                      "last_status_at": j.get("last_status_at"),
-                     "draft": j.get("follow_up_draft", "")} for j in due]}
+                     "draft": j.get("draft") or j.get("follow_up_draft", "")} for j in due]}
 
 
 # ------------------------------------------------------------ documents (AED)
@@ -291,7 +299,7 @@ async def document_add(profile_id: str, file: UploadFile = File(...)):
     data = await file.read()
     res = profiles_mod.add_document(profile_id, file.filename, data)
     if "error" in res:
-        raise HTTPException(404, res["error"])
+        raise HTTPException(_err_status(res["error"]), res["error"])
     return res
 
 
@@ -299,7 +307,7 @@ async def document_add(profile_id: str, file: UploadFile = File(...)):
 def document_edit(profile_id: str, doc_id: str, payload: dict):
     res = profiles_mod.edit_document(profile_id, doc_id, payload)
     if "error" in res:
-        raise HTTPException(404, res["error"])
+        raise HTTPException(_err_status(res["error"]), res["error"])
     return res
 
 
@@ -311,7 +319,7 @@ async def document_replace(profile_id: str, doc_id: str, file: UploadFile = File
     res = profiles_mod.edit_document(profile_id, doc_id, {}, data=data,
                                      filename=file.filename)
     if "error" in res:
-        raise HTTPException(404, res["error"])
+        raise HTTPException(_err_status(res["error"]), res["error"])
     return res
 
 
