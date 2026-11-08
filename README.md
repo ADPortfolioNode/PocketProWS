@@ -25,12 +25,15 @@ Constraints, same as the other PocketPro apps:
   pattern used for the other PocketPro apps before going live.
 
 ## Setup (dev)
+One command, same pattern as the other PocketPro projects:
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -r backend/requirements-dev.txt
-cd frontend && npm install && npm run build && cd ..
-./start-dev.sh   # backend :5003, frontend :3003 (Vite dev, proxies /api)
-./stop-dev.sh
+./start.sh            # backend :5003, frontend :3003 (Vite dev, proxies /api)
+./start.sh --test     # monitored startup: waits for both health endpoints, PASS/FAIL
+./start.sh --build    # recreate the venv + clean frontend install and build, then start
+./start.sh --rebuild  # reinstall deps + rebuild (cached), then start
+./start.sh --down     # stop the stack (data is kept)
 ```
+Each port bumps +1 while taken (never stops another app); a stale PocketProWS server is stopped instead and the port is kept. `start-dev.sh` is an alias for `./start.sh`, and `./stop-dev.sh` stops the stack. The first run builds the venv/frontend automatically; `./start.sh --no-build` skips that.
 
 ## API keys (env vars, never commit)
 ```bash
