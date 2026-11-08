@@ -37,6 +37,14 @@ export default function App() {
   const [interviewA, setInterviewA] = useState("");
   const [docs, setDocs] = useState([]);
   const [docMsg, setDocMsg] = useState("");
+  const [status, setStatus] = useState(null);
+  const [agentMsg, setAgentMsg] = useState("");
+
+  const loadStatus = async (id) => {
+    if (!id) { setStatus(null); return; }
+    const s = await fetch(`/api/profiles/${id}/status`).then((x) => x.json()).catch(() => null);
+    setStatus(s && !s.detail ? s : null);
+  };
 
   const loadProfiles = async () => {
     const r = await fetch("/api/profiles").then((x) => x.json()).catch(() => ({ profiles: [] }));
@@ -64,6 +72,7 @@ export default function App() {
     setInterview(iv);
     const d = await fetch(`/api/profiles/${id}/documents`).then((x) => x.json()).catch(() => ({ documents: [] }));
     setDocs(d.documents || []);
+    loadStatus(id);
   };
 
   useEffect(() => {
@@ -156,6 +165,25 @@ export default function App() {
     loadActive(activeId);
   };
 
+  // Workflow agents: run them on demand, then show what they reported.
+  // The agents do the operable work (search, follow-ups, resource checks);
+  // applying to an employer stays external — the app only records it.
+  const runAgents = async () => {
+    setAgentMsg("Agents running…");
+    const r = await fetch(`/api/profiles/${activeId}/agents/run`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+    const res = await r.json();
+    setAgentMsg((res.reports || []).map((x) => x.summary).join(" "));
+    loadActive(activeId);
+  };
+
+  const setJobStatus = async (job, next) => {
+    await fetch(`/api/profiles/${activeId}/saved-jobs/${job.id}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: next }) });
+    loadActive(activeId);
+  };
+
+  const NEXT_STATUS = { saved: "applied", applied: "interviewing", interviewing: "offer", offer: "hired" };
+  const NEXT_LABEL = { saved: "Mark applied", applied: "Mark interviewing", interviewing: "Mark offer", offer: "Mark hired" };
+
   const who = header?.client_name || (activeId ? "(name not set yet — answer the first interview question)" : "nobody yet");
 
   return (
@@ -194,6 +222,39 @@ export default function App() {
             <li key={s.step}>{s.done ? "✓" : "○"} {WORKFLOW_LABELS[s.step]}
               {!s.done && (s.step === "applications" || s.step === "follow_up") && <button onClick={() => markStep(s.step)}>Mark done</button>}
             </li>))}</ol>
+        </section>
+      )}
+
+      {activeId && status && (
+        <section>
+          <h2>Agents — workflow status for {status.client_name || activeId}</h2>
+          <p>The agents run on demand and report here — the same status the concierge reports when you ask “what’s the status?” Applying to an employer stays outside the app; the agents record what happened, they never submit an application.</p>
+          <button onClick={runAgents}>Run agents (search · follow-up · resources)</button>
+          {agentMsg && <p>{agentMsg}</p>}
+          <p><strong>Pipeline:</strong> {status.pipeline.total} saved job(s) — {Object.entries(status.pipeline.counts).map(([k, v]) => `${v} ${k}`).join(", ")}.</p>
+          {status.follow_ups_due.length > 0 ? (
+            <div><p><strong>Follow-ups due ({status.follow_ups_due.length}):</strong></p>
+              <ul>{status.follow_ups_due.map((f) => (
+                <li key={f.job_id}>{f.title} — employer {f.company} ({f.status}, last change {f.last_status_at ? f.last_status_at.slice(0, 10) : "unknown"})
+                  {f.draft && <p>Draft: {f.draft}</p>}
+                </li>))}</ul></div>
+          ) : <p>No follow-ups due right now.</p>}
+          <p><strong>Resources:</strong> {status.resources.document_count} document(s), {status.resources.healthy_count} healthy in RAG, {status.resources.interview_notes_in_rag} interview note(s) in RAG.
+            {status.resources.documents.filter((d) => d.status !== "ok").map((d) => ` ${d.title}: ${d.problems.join("; ")}.`)}
+          </p>
+          {status.last_runs.length > 0 && (
+            <div><p><strong>Last agent runs:</strong></p>
+              <ul>{status.last_runs.map((r, i) => <li key={i}>{r.agent} — {r.ran_at ? r.ran_at.slice(0, 16).replace("T", " ") : ""}: {r.summary}</li>)}</ul>
+            </div>
+          )}
+          {status.saved_jobs.length > 0 && (
+            <div><p><strong>Saved jobs — application status:</strong></p>
+              <ul>{status.saved_jobs.map((j) => (
+                <li key={j.id}>{j.title} — employer {j.company} · {j.application_status || "saved"}
+                  {NEXT_STATUS[j.application_status || "saved"] && <button onClick={() => setJobStatus(j, NEXT_STATUS[j.application_status || "saved"])}>{NEXT_LABEL[j.application_status || "saved"]}</button>}
+                  {(j.application_status || "saved") !== "rejected" && (j.application_status || "saved") !== "hired" && <button onClick={() => setJobStatus(j, "rejected")}>Mark rejected</button>}
+                </li>))}</ul></div>
+          )}
         </section>
       )}
 

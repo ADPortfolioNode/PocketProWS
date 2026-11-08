@@ -107,6 +107,22 @@ def search_profile_text(profile_id, query, n=5):
     return out
 
 
+def count_profile_chunks(profile_id, doc_id=None, kind=None):
+    """How many RAG chunks this profile has (optionally for one document
+    or one kind, e.g. kind="interview"). Used by the resource agent to
+    spot documents whose RAG entry is missing or stale."""
+    col = get_profiles_collection()
+    where = {"profile_id": profile_id}
+    if doc_id is not None:
+        where = {"$and": [{"profile_id": profile_id}, {"doc_id": doc_id}]}
+    elif kind is not None:
+        where = {"$and": [{"profile_id": profile_id}, {"kind": kind}]}
+    try:
+        return len(col.get(where=where, limit=10000)["ids"])
+    except Exception:  # noqa: BLE001 - a missing collection reads as zero
+        return 0
+
+
 def delete_profile_doc_chunks(profile_id, doc_id):
     col = get_profiles_collection()
     try:

@@ -254,6 +254,9 @@ def workflow_state(profile: dict) -> dict:
         done.add("preferences")
     if profile.get("saved_jobs"):
         done.add("job_search")
+    if any((j.get("application_status") or "saved") != "saved"
+           for j in profile.get("saved_jobs") or []):
+        done.add("applications")
     steps = [{"step": s, "done": s in done} for s in WORKFLOW_STEPS]
     current = next((s["step"] for s in steps if not s["done"]), "follow_up")
     return {"steps": steps, "current_step": current, "done": sorted(done)}

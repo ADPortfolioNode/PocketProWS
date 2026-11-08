@@ -32,6 +32,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import profiles as profiles_mod
+from . import agents as agents_mod
 from .chat import answer as concierge_answer
 from .connectors.adzuna import AdzunaConnector
 from .connectors.arbeitnow import ArbeitnowConnector
@@ -99,7 +100,10 @@ def jobs_search(q: str = "", location: str = "", limit: int = 10, source: str = 
         p = profiles.get(profile_id)
         if p:
             seen = {j["id"] for j in p["saved_jobs"]}
-            p["saved_jobs"].extend(j for j in all_jobs if j["id"] not in seen)
+            for j in all_jobs:
+                if j["id"] not in seen:
+                    agents_mod._ensure_job_status(j)
+                    p["saved_jobs"].append(j)
             profiles_mod._save(profiles)
     return {"query": q, "location": location, "total": len(all_jobs),
             "results": results, "profile_id": profile_id}
@@ -209,6 +213,63 @@ def workflow_mark(profile_id: str, payload: dict):
     if st is None:
         raise HTTPException(404, "profile not found or bad step")
     return st
+
+
+# ------------------------------------------------------------ agents + status
+@app.get("/api/profiles/{profile_id}/status")
+def status_get(profile_id: str, follow_up_days: int = 7):
+    st = agents_mod.profile_status(profile_id, follow_up_days=follow_up_days)
+    if "error" in st:
+        raise HTTPException(404, st["error"])
+    return st
+
+
+@app.post("/api/profiles/{profile_id}/agents/run")
+def agents_run(profile_id: str, payload: dict):
+    if not profiles_mod.get_profile(profile_id):
+        raise HTTPException(404, "profile not found")
+    agents = payload.get("agents") or None
+    days = payload.get("follow_up_days", agents_mod.DEFAULT_FOLLOW_UP_DAYS)
+    try:
+        days = int(days)
+    except (TypeError, ValueError):
+        days = agents_mod.DEFAULT_FOLLOW_UP_DAYS
+    return agents_mod.run_agents(profile_id, agents=agents,
+                                 follow_up_days=days)
+
+
+@app.get("/api/profiles/{profile_id}/applications")
+def applications_get(profile_id: str):
+    p = profiles_mod.get_profile(profile_id)
+    if not p:
+        raise HTTPException(404, "profile not found")
+    return {"profile_id": profile_id,
+            "pipeline": agents_mod.application_pipeline(p),
+            "jobs": [agents_mod._ensure_job_status(dict(j)) for j in p["saved_jobs"]]}
+
+
+@app.patch("/api/profiles/{profile_id}/saved-jobs/{job_id}/status")
+def application_status_set(profile_id: str, job_id: str, payload: dict):
+    res = agents_mod.set_application_status(profile_id, job_id,
+                                            payload.get("status", ""),
+                                            payload.get("note", ""))
+    if "error" in res:
+        raise HTTPException(400, res["error"])
+    return res
+
+
+@app.get("/api/profiles/{profile_id}/follow-ups")
+def follow_ups_get(profile_id: str, days: int = 7):
+    p = profiles_mod.get_profile(profile_id)
+    if not p:
+        raise HTTPException(404, "profile not found")
+    due = agents_mod.follow_up_due(p, days=days)
+    return {"profile_id": profile_id, "follow_up_days": days,
+            "due": [{"job_id": j["id"], "title": j.get("title", ""),
+                     "company": j.get("company", ""),
+                     "status": agents_mod._job_status(j),
+                     "last_status_at": j.get("last_status_at"),
+                     "draft": j.get("follow_up_draft", "")} for j in due]}
 
 
 # ------------------------------------------------------------ documents (AED)

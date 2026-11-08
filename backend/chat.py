@@ -16,9 +16,21 @@ Keyless retrieved-text fallback (PocketPro pattern). Two modes:
 from . import profiles as profiles_mod
 from .vector_store import search_jobs_text, search_profile_text
 
+STATUS_WORDS = ("status", "how are we doing", "how is it going", "progress",
+                "update", "follow-up", "follow up", "followup", "pipeline",
+                "where are we", "what's happening", "whats happening")
+
 
 def answer(question: str, profile_id: str = "", mode: str = "") -> dict:
     q = (question or "").strip()
+    # Status questions go to the workflow agents' live status — real
+    # numbers for the active profile, no LLM key needed.
+    if profile_id and q and any(w in q.lower() for w in STATUS_WORDS):
+        from . import agents as agents_mod
+        st = agents_mod.profile_status(profile_id)
+        if "error" not in st:
+            return {"answer": agents_mod.status_summary_text(st),
+                    "jobs": [], "mode": "status", "status": st}
     if mode == "interview" and profile_id:
         profile = profiles_mod.get_profile(profile_id)
         if not profile:
