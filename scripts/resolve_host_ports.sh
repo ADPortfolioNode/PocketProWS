@@ -15,6 +15,35 @@
 # An already-set POCKETPROWS_*_PORT is honoured only when it is free;
 # when it is busy we bump from it instead of trusting it blindly.
 
+# Find a real Python 3 interpreter, as an array in PY_CMD (empty when none
+# works). On Windows, `python3` is often the Microsoft Store stub (an App
+# execution alias): `command -v` finds it, but running it only prints
+# "Python was not found..." and exits non-zero. So a candidate only counts
+# when it actually runs Python code. Tries python3, then python, then the
+# py launcher. The result is cached for the life of the shell.
+PY_CMD=()
+
+find_python() {
+    if [ "${#PY_CMD[@]}" -gt 0 ]; then
+        return 0
+    fi
+    local cand
+    for cand in python3 python; do
+        if command -v "$cand" >/dev/null 2>&1 \
+            && "$cand" -c "import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)" >/dev/null 2>&1; then
+            PY_CMD=("$cand")
+            return 0
+        fi
+    done
+    if command -v py >/dev/null 2>&1 \
+        && py -3 -c "import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)" >/dev/null 2>&1; then
+        PY_CMD=(py -3)
+        return 0
+    fi
+    PY_CMD=()
+    return 1
+}
+
 host_port_in_use() {
     local port="$1"
 
@@ -23,8 +52,8 @@ host_port_in_use() {
     # the port is really held. A connect test would be wrong here — when
     # a holder's accept queue is full, the connect times out and looks
     # "free" even though the port is taken.
-    if command -v python3 >/dev/null 2>&1; then
-        python3 -c 'import errno, socket, sys
+    if find_python; then
+        "${PY_CMD[@]}" -c 'import errno, socket, sys
 port = int(sys.argv[1])
 for family, addr in ((socket.AF_INET, ("127.0.0.1", port)),
                      (socket.AF_INET6, ("::1", port, 0, 0))):

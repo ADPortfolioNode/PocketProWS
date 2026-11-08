@@ -102,21 +102,25 @@ frontend_missing() {
 # --rebuild reuses the existing venv and install caches.
 run_build() {
     local from_scratch="$1"
-    if [ "${from_scratch}" = true ]; then
-        echo "Building from scratch: recreating the venv..."
-        if ! command -v python3 >/dev/null 2>&1; then
-            echo "ERROR: 'python3' not found. Install Python 3, then run ./start.sh --build again." >&2
+    if [ "${from_scratch}" = true ] || venv_missing; then
+        # find_python (scripts/resolve_host_ports.sh) verifies the
+        # interpreter actually runs: on Windows, `python3` is often just
+        # the Microsoft Store shortcut, which prints "Python was not
+        # found..." instead of running.
+        if ! find_python; then
+            echo "ERROR: No working Python 3 found (tried python3, python, py -3)." >&2
+            echo "On Windows, 'python3' is often just the Microsoft Store shortcut:" >&2
+            echo "install Python from python.org (check 'Add Python to PATH'), or" >&2
+            echo "turn the Store shortcut off in Settings > Apps > Advanced app settings > App execution aliases." >&2
             exit 1
         fi
-        rm -rf .venv
-        python3 -m venv .venv
-    elif venv_missing; then
-        echo "Creating the venv..."
-        if ! command -v python3 >/dev/null 2>&1; then
-            echo "ERROR: 'python3' not found. Install Python 3, then run ./start.sh --build again." >&2
-            exit 1
+        if [ "${from_scratch}" = true ]; then
+            echo "Building from scratch: recreating the venv..."
+            rm -rf .venv
+        else
+            echo "Creating the venv..."
         fi
-        python3 -m venv .venv
+        "${PY_CMD[@]}" -m venv .venv
     fi
 
     local pip
