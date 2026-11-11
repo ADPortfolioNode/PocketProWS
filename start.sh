@@ -108,7 +108,7 @@ run_build() {
         # the Microsoft Store shortcut, which prints "Python was not
         # found..." instead of running.
         if ! find_python; then
-            echo "ERROR: No working Python 3 found (tried python3, python, py -3)." >&2
+            echo "ERROR: No working Python 3 found (tried python3, python, py -3.12, py -3, python3.12)." >&2
             echo "On Windows, 'python3' is often just the Microsoft Store shortcut:" >&2
             echo "install Python from python.org (check 'Add Python to PATH'), or" >&2
             echo "turn the Store shortcut off in Settings > Apps > Advanced app settings > App execution aliases." >&2

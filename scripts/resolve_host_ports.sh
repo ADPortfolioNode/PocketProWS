@@ -19,25 +19,58 @@
 # works). On Windows, `python3` is often the Microsoft Store stub (an App
 # execution alias): `command -v` finds it, but running it only prints
 # "Python was not found..." and exits non-zero. So a candidate only counts
-# when it actually runs Python code. Tries python3, then python, then the
-# py launcher. The result is cached for the life of the shell.
+# when it actually runs Python code. Tries python3, python, py -3.12,
+# py -3, then python3.12 last (so a stubbed `python` and the Windows
+# launcher layout win first; python3.12 only matters on Unix where the
+# other names may point at a newer Python). The result is cached for
+# the life of the shell.
+#
+# Version preference: among candidates that run, prefer one reporting
+# Python 3.12, because the pinned chromadb's hnswlib ships prebuilt wheels
+# only up to cp312 — no hnswlib version ships cp313 wheels, so a 3.13+
+# interpreter makes `pip install` fall back to building hnswlib from
+# source, which needs Microsoft C++ Build Tools. When no 3.12 is available
+# we fall back to the first working candidate (preserving the old order)
+# and print a warning naming the problem.
 PY_CMD=()
 
 find_python() {
     if [ "${#PY_CMD[@]}" -gt 0 ]; then
         return 0
     fi
-    local cand
-    for cand in python3 python; do
-        if command -v "$cand" >/dev/null 2>&1 \
-            && "$cand" -c "import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)" >/dev/null 2>&1; then
-            PY_CMD=("$cand")
+    local spec
+    local -a cmd fallback=()
+    local fallback_version=""
+    for spec in "python3" "python" "py -3.12" "py -3" "python3.12"; do
+        # Word-split the fixed literal spec into the command array.
+        cmd=($spec)
+        if ! command -v "${cmd[0]}" >/dev/null 2>&1; then
+            continue
+        fi
+        if ! "${cmd[@]}" -c "import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)" >/dev/null 2>&1; then
+            continue
+        fi
+        local ver
+        ver="$("${cmd[@]}" -c "import sys; print(sys.version_info[0], sys.version_info[1])" 2>/dev/null)"
+        if [ "$ver" = "3 12" ]; then
+            PY_CMD=("${cmd[@]}")
+            echo "Using Python ${cmd[*]} ($("${cmd[@]}" --version 2>&1))" >&2
             return 0
         fi
+        if [ "${#fallback[@]}" -eq 0 ]; then
+            fallback=("${cmd[@]}")
+            fallback_version="$ver"
+        fi
     done
-    if command -v py >/dev/null 2>&1 \
-        && py -3 -c "import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)" >/dev/null 2>&1; then
-        PY_CMD=(py -3)
+    if [ "${#fallback[@]}" -gt 0 ]; then
+        PY_CMD=("${fallback[@]}")
+        echo "Using Python ${fallback[*]} ($("${fallback[@]}" --version 2>&1))" >&2
+        local vmaj vmin
+        read -r vmaj vmin <<< "$fallback_version"
+        if [ "$vmaj" = "3" ] && [ -n "$vmin" ] && [ "$vmin" -ge 13 ] 2>/dev/null; then
+            echo "WARNING: Python ${vmaj}.${vmin} has no prebuilt chromadb wheels;" >&2
+            echo "the backend install will try to build chroma-hnswlib from source and needs Microsoft C++ Build Tools (or a Python 3.12 venv)." >&2
+        fi
         return 0
     fi
     PY_CMD=()
