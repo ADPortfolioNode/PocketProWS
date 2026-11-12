@@ -1,6 +1,6 @@
 fastapi
 uvicorn[standard]
-chromadb==0.6.3
+chromadb==0.5.4
 httpx
 pydantic
 python-multipart
