@@ -1,0 +1,582 @@
+/* PocketProWS — Recruiter Workstation theme.
+   Mobile-first: base styles target small screens; min-width media
+   queries layer on desktop polish (hover lift, larger type). */
+
+:root {
+  --ppws-ink: #0e1a2b;          /* deep ink navy */
+  --ppws-ink-2: #1b2f47;        /* raised navy */
+  --ppws-accent: #e9a13b;       /* warm amber accent */
+  --ppws-accent-dark: #c98424;
+  --ppws-bg: #f7f4ef;           /* soft off-white */
+  --ppws-card: #ffffff;
+  --ppws-text: #22303d;
+  --ppws-muted: #5d6d7b;
+  --ppws-line: #e4ddd2;
+  --ppws-radius: 1.25rem;
+  --ppws-shadow: 0 10px 30px rgba(14, 26, 43, 0.08);
+  --ppws-shadow-lift: 0 18px 42px rgba(14, 26, 43, 0.16);
+  --ppws-font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ppws-font-display: "Sora", "Inter", system-ui, sans-serif;
+}
+
+body {
+  background-color: var(--ppws-bg);
+  color: var(--ppws-text);
+  font-family: var(--ppws-font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+.ppws-app h1,
+.ppws-app h2,
+.ppws-app h3,
+.ppws-brand {
+  font-family: var(--ppws-font-display);
+  color: var(--ppws-ink);
+}
+
+/* Visible keyboard focus everywhere */
+.ppws-app a:focus-visible,
+.ppws-app button:focus-visible,
+.ppws-app input:focus-visible,
+.ppws-app select:focus-visible {
+  outline: 3px solid var(--ppws-accent);
+  outline-offset: 2px;
+}
+
+/* Comfortable tap targets */
+.ppws-app .btn,
+.ppws-app .form-control,
+.ppws-app .form-select {
+  min-height: 44px;
+}
+.ppws-app .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  font-weight: 600;
+  border-radius: 0.8rem;
+}
+.ppws-app .btn-sm {
+  min-height: 44px;
+  padding-inline: 0.9rem;
+}
+
+/* ---------- Buttons ---------- */
+.ppws-btn-accent {
+  background-color: var(--ppws-accent);
+  border: 1px solid var(--ppws-accent);
+  color: var(--ppws-ink);
+}
+.ppws-btn-accent:hover,
+.ppws-btn-accent:focus {
+  background-color: var(--ppws-accent-dark);
+  border-color: var(--ppws-accent-dark);
+  color: var(--ppws-ink);
+}
+.ppws-btn-outline {
+  background-color: transparent;
+  border: 1px solid var(--ppws-ink);
+  color: var(--ppws-ink);
+}
+.ppws-btn-outline:hover,
+.ppws-btn-outline:focus {
+  background-color: var(--ppws-ink);
+  color: #fff;
+}
+
+/* ---------- Navbar ---------- */
+.ppws-navbar {
+  background-color: rgba(14, 26, 43, 0.98);
+  box-shadow: 0 4px 18px rgba(14, 26, 43, 0.25);
+  z-index: 1030;
+}
+.ppws-brand {
+  color: #fff !important;
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: 0.01em;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+.ppws-brand-sub {
+  color: var(--ppws-accent);
+  font-weight: 600;
+}
+.ppws-status-pill,
+.ppws-client-chip {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.5em 0.9em;
+  border-radius: 999px;
+  white-space: normal;
+  text-align: left;
+}
+.ppws-status-pill.is-up {
+  background-color: #1e4634;
+  color: #b9ecd2;
+}
+.ppws-status-pill.is-down {
+  background-color: #5a2e22;
+  color: #ffd9c4;
+}
+.ppws-client-chip {
+  background-color: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  color: #fff;
+}
+
+/* ---------- Hero ---------- */
+.ppws-hero {
+  background-size: cover;
+  background-position: center;
+  background-color: var(--ppws-ink);
+  scroll-margin-top: 76px;
+}
+.ppws-hero-overlay {
+  background: linear-gradient(100deg, rgba(14, 26, 43, 0.93) 0%, rgba(14, 26, 43, 0.78) 55%, rgba(14, 26, 43, 0.45) 100%);
+  padding: 3rem 0 3.5rem;
+}
+.ppws-eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ppws-accent);
+  margin-bottom: 0.75rem;
+}
+.ppws-eyebrow-dark {
+  color: var(--ppws-accent-dark);
+}
+.ppws-hero-title {
+  color: #fff;
+  font-weight: 800;
+  font-size: 2.1rem;
+  line-height: 1.12;
+  letter-spacing: -0.01em;
+  margin-bottom: 1rem;
+}
+.ppws-hero-sub {
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 1.02rem;
+  line-height: 1.6;
+  max-width: 34rem;
+  margin-bottom: 1.5rem;
+}
+.ppws-glass-card {
+  background: rgba(255, 255, 255, 0.1);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: var(--ppws-radius);
+  padding: 1.25rem 1.35rem;
+  color: #fff;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.3);
+}
+.ppws-glass-label {
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--ppws-accent);
+  margin-bottom: 0.5rem;
+}
+.ppws-glass-client {
+  font-size: 1.08rem;
+  line-height: 1.45;
+  margin-bottom: 0.4rem;
+}
+.ppws-glass-summary {
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.6;
+  margin-bottom: 0;
+}
+
+/* ---------- Sections & cards ---------- */
+.ppws-section {
+  padding: 3rem 0 0.5rem;
+}
+.ppws-section-head {
+  max-width: 44rem;
+  margin-bottom: 1.75rem;
+}
+.ppws-section-title {
+  font-weight: 700;
+  font-size: 1.7rem;
+  margin-bottom: 0.5rem;
+}
+.ppws-section-sub {
+  color: var(--ppws-muted);
+  line-height: 1.6;
+  margin-bottom: 0;
+}
+.ppws-main {
+  padding-top: 2.25rem;
+  padding-bottom: 3rem;
+}
+.ppws-card {
+  background-color: var(--ppws-card);
+  border: 0;
+  border-radius: var(--ppws-radius);
+  box-shadow: var(--ppws-shadow);
+  scroll-margin-top: 88px;
+}
+.ppws-card .card-body {
+  padding: 1.35rem;
+}
+.ppws-card-title {
+  font-weight: 700;
+  font-size: 1.3rem;
+  margin-bottom: 0.85rem;
+}
+.ppws-card p {
+  line-height: 1.6;
+}
+
+/* ---------- Workflow guidance cards ---------- */
+.ppws-step-card {
+  border: 0;
+  border-radius: var(--ppws-radius);
+  overflow: hidden;
+  box-shadow: var(--ppws-shadow);
+  background-color: var(--ppws-card);
+}
+.ppws-step-media {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background-color: var(--ppws-ink-2);
+}
+.ppws-step-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.ppws-step-badge {
+  position: absolute;
+  top: 0.85rem;
+  left: 0.85rem;
+  background-color: var(--ppws-accent);
+  color: var(--ppws-ink);
+  font-family: var(--ppws-font-display);
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.4em 0.85em;
+  border-radius: 999px;
+  box-shadow: 0 6px 16px rgba(14, 26, 43, 0.35);
+}
+.ppws-step-title {
+  font-size: 1.12rem;
+  font-weight: 700;
+  margin-bottom: 0.45rem;
+}
+.ppws-step-guide {
+  color: var(--ppws-muted);
+  line-height: 1.6;
+  margin-bottom: 0;
+}
+
+/* ---------- Live workflow progress ---------- */
+.ppws-progress {
+  height: 10px;
+  border-radius: 999px;
+  background-color: var(--ppws-line);
+  margin: 0.6rem 0 1.1rem;
+  overflow: hidden;
+}
+.ppws-progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--ppws-accent-dark), var(--ppws-accent));
+  transition: width 0.5s ease;
+}
+.ppws-progress-count {
+  color: var(--ppws-muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.ppws-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ppws-step {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.65rem 0 0.65rem 0.2rem;
+}
+.ppws-step + .ppws-step {
+  border-top: 1px dashed var(--ppws-line);
+}
+.ppws-step-dot {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid var(--ppws-line);
+  color: var(--ppws-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  background-color: #fff;
+}
+.ppws-step.is-done .ppws-step-dot {
+  background-color: var(--ppws-ink);
+  border-color: var(--ppws-ink);
+  color: var(--ppws-accent);
+}
+.ppws-step.is-current .ppws-step-dot {
+  border-color: var(--ppws-accent);
+  color: var(--ppws-accent-dark);
+}
+.ppws-step-name {
+  font-weight: 600;
+}
+.ppws-step.is-done .ppws-step-name {
+  color: var(--ppws-muted);
+}
+.ppws-current-badge {
+  background-color: var(--ppws-accent);
+  color: var(--ppws-ink);
+  font-weight: 700;
+}
+
+/* ---------- Agents / lists ---------- */
+.ppws-agent-msg {
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  background-color: var(--ppws-bg);
+  border-left: 4px solid var(--ppws-accent);
+  border-radius: 0.5rem;
+  line-height: 1.6;
+}
+.ppws-alert {
+  border-radius: 0.8rem;
+  margin-top: 1rem;
+}
+.ppws-list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+.ppws-list > li {
+  padding: 0.7rem 0;
+  line-height: 1.55;
+}
+.ppws-list > li + li {
+  border-top: 1px dashed var(--ppws-line);
+}
+.ppws-draft {
+  color: var(--ppws-muted);
+  margin: 0.35rem 0 0;
+  white-space: pre-line;
+}
+.ppws-saved-jobs > li,
+.ppws-doc-list > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.ppws-saved-job-text,
+.ppws-doc-text {
+  flex: 1 1 16rem;
+}
+.ppws-doc-actions {
+  display: inline-flex;
+  gap: 0.4rem;
+}
+
+/* ---------- Concierge / documents ---------- */
+.ppws-interview {
+  background-color: var(--ppws-bg);
+  border: 1px solid var(--ppws-line);
+  border-radius: 1rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+.ppws-chat-answer {
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  background-color: var(--ppws-bg);
+  border-radius: 0.8rem;
+  line-height: 1.65;
+}
+.ppws-side-img {
+  width: 100%;
+  height: 100%;
+  min-height: 220px;
+  object-fit: cover;
+  border-radius: 1rem;
+  display: block;
+}
+.ppws-file-label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+.ppws-file-label .form-control {
+  margin-top: 0.4rem;
+  font-weight: 400;
+}
+.ppws-doc-msg {
+  padding: 0.8rem 1rem;
+  background-color: var(--ppws-bg);
+  border-left: 4px solid var(--ppws-accent);
+  border-radius: 0.5rem;
+  line-height: 1.6;
+}
+
+/* ---------- Job search / sources ---------- */
+.ppws-results-total {
+  font-weight: 600;
+  margin-top: 1.1rem;
+}
+.ppws-source-block {
+  margin-top: 1.4rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--ppws-line);
+}
+.ppws-source-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  text-transform: capitalize;
+  margin-bottom: 0.5rem;
+}
+.ppws-job-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ppws-job-list > li {
+  padding: 0.6rem 0;
+  line-height: 1.55;
+}
+.ppws-job-list > li + li {
+  border-top: 1px dashed var(--ppws-line);
+}
+.ppws-job-list a {
+  font-weight: 600;
+  color: var(--ppws-ink);
+  text-decoration-color: var(--ppws-accent);
+  text-underline-offset: 3px;
+}
+.ppws-source-groups {
+  margin-top: 0.5rem;
+}
+.ppws-source-group {
+  margin-bottom: 0.6rem;
+}
+.ppws-source-group-label {
+  font-weight: 600;
+  margin-right: 0.35rem;
+}
+.ppws-source-badge {
+  background-color: var(--ppws-ink);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.45em 0.8em;
+  border-radius: 999px;
+}
+.ppws-source-badge.is-gated {
+  background-color: transparent;
+  border: 1px solid var(--ppws-muted);
+  color: var(--ppws-muted);
+}
+
+/* ---------- Footer ---------- */
+.ppws-footer {
+  background-color: var(--ppws-ink);
+  color: rgba(255, 255, 255, 0.78);
+  padding: 1.6rem 0;
+  font-size: 0.92rem;
+}
+.ppws-footer-brand {
+  font-family: var(--ppws-font-display);
+  font-weight: 700;
+  color: #fff;
+}
+.ppws-footer-link {
+  color: var(--ppws-accent);
+  font-weight: 600;
+  text-decoration: none;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+.ppws-footer-link:hover {
+  color: #fff;
+}
+
+/* ---------- Desktop polish (min-width enhancements) ---------- */
+@media (min-width: 768px) {
+  .ppws-hero-overlay {
+    padding: 4rem 0 4.5rem;
+  }
+  .ppws-hero-title {
+    font-size: 2.7rem;
+  }
+  .ppws-card .card-body {
+    padding: 1.75rem;
+  }
+  .ppws-section-title {
+    font-size: 2rem;
+  }
+}
+
+@media (min-width: 992px) {
+  .ppws-hero-title {
+    font-size: 3.1rem;
+  }
+  .ppws-glass-card {
+    padding: 1.6rem 1.75rem;
+  }
+}
+
+@media (hover: hover) and (min-width: 992px) {
+  .ppws-card,
+  .ppws-step-card {
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+  }
+  .ppws-card:hover,
+  .ppws-step-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--ppws-shadow-lift);
+  }
+  .ppws-step-media img {
+    transition: transform 0.5s ease;
+  }
+  .ppws-step-card:hover .ppws-step-media img {
+    transform: scale(1.045);
+  }
+  .ppws-btn-accent {
+    transition: background-color 0.2s ease, transform 0.2s ease;
+  }
+  .ppws-btn-accent:hover {
+    transform: translateY(-1px);
+  }
+}
+
+/* ---------- Reduced motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .ppws-app *,
+  .ppws-app *::before,
+  .ppws-app *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+  .ppws-card:hover,
+  .ppws-step-card:hover,
+  .ppws-btn-accent:hover {
+    transform: none !important;
+  }
+}
