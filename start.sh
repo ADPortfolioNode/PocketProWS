@@ -98,6 +98,48 @@ frontend_missing() {
 }
 
 # --- Build steps ---
+# Free frontend/node_modules ahead of a clean install. npm ci deletes
+# the tree first, and on Windows that dies with EPERM when a
+# still-running copy of THIS app (Vite plus its esbuild/rollup helper
+# processes) or an antivirus scan holds a native binary open. Stop
+# only this app's own processes, retry the removal, and - at worst -
+# fail with a clear message instead of npm's raw EPERM dump.
+free_frontend_modules() {
+    [ -d frontend/node_modules ] || return 0
+    # Stop this app's running stack (pidfiles + uvicorn pattern), so
+    # its Vite/esbuild children let go of node_modules.
+    bash "${SCRIPT_DIR}/stop-dev.sh" >/dev/null 2>&1 || true
+    local attempt
+    for attempt in 1 2 3; do
+        rm -rf frontend/node_modules 2>/dev/null || true
+        [ ! -d frontend/node_modules ] && return 0
+        sleep 2
+    done
+    # Windows under Git Bash: stop whatever still holds files inside
+    # THIS frontend folder, matched by executable path or command
+    # line. Only this app's own helpers live there (esbuild.exe,
+    # rollup's native binary, Vite's node), so another project's
+    # processes are never touched.
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*)
+            if command -v cygpath >/dev/null 2>&1 && command -v powershell.exe >/dev/null 2>&1; then
+                PPWS_FE_WIN="$(cygpath -w "${SCRIPT_DIR}/frontend" 2>/dev/null || true)"
+                if [ -n "${PPWS_FE_WIN}" ]; then
+                    export PPWS_FE_WIN
+                    powershell.exe -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { \$_.ProcessId -ne \$PID -and ((\$_.ExecutablePath -like \"\$env:PPWS_FE_WIN*\") -or (\$_.CommandLine -like \"*\$env:PPWS_FE_WIN*\")) } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue }" >/dev/null 2>&1 || true
+                    sleep 1
+                    rm -rf frontend/node_modules 2>/dev/null || true
+                fi
+            fi
+            ;;
+    esac
+    if [ -d frontend/node_modules ]; then
+        echo "ERROR: frontend/node_modules is locked by another program (an editor or antivirus, most likely)." >&2
+        echo "Close it, then run ./start.sh --build again." >&2
+        exit 1
+    fi
+}
+
 # --build recreates the venv from scratch (the --no-cache analogue);
 # --rebuild reuses the existing venv and install caches.
 run_build() {
@@ -138,6 +180,7 @@ run_build() {
     fi
     if [ "${from_scratch}" = true ]; then
         echo "Installing frontend deps (clean, from the lockfile)..."
+        free_frontend_modules
         (cd frontend && npm ci)
     else
         echo "Installing frontend deps..."
