@@ -57,6 +57,7 @@ export default function App() {
   const [header, setHeader] = useState(null);
   const [active, setActive] = useState(null);
   const [newName, setNewName] = useState("");
+  const [profileMsg, setProfileMsg] = useState("");
   const [query, setQuery] = useState("AI Engineer");
   const [location, setLocation] = useState("Remote");
   const [results, setResults] = useState(null);
@@ -129,9 +130,22 @@ export default function App() {
   const createProfile = async () => {
     // An empty name is allowed: the interview's first question is the
     // client's name, so a nameless profile gets named on Q1.
-    const r = await fetch("/api/profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName }) });
-    const p = await r.json();
-    if (!p.id) return; // server rejected it (e.g. empty name) — stay put
+    // A failure must NEVER be silent (the old code just returned): if the
+    // page is talking to a stale or wrong backend, this is the first thing
+    // that breaks, and the user deserves to see why.
+    let p = null;
+    try {
+      const r = await fetch("/api/profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName }) });
+      p = await r.json().catch(() => null);
+      if (!r.ok || !p?.id) {
+        setProfileMsg(`Could not add that client — the server replied ${r.status}${p?.detail ? `: ${p.detail}` : ""}. If the status above does not say "Backend: ok", the page is not connected to the PocketProWS backend; restart with ./start.sh and open the address it prints.`);
+        return;
+      }
+    } catch {
+      setProfileMsg("Could not add that client — the backend could not be reached at all. Restart with ./start.sh and open the address it prints, then try again.");
+      return;
+    }
+    setProfileMsg("");
     setNewName("");
     await loadProfiles();
     await switchProfile(p.id);
@@ -325,6 +339,7 @@ export default function App() {
                     {activeId && <button className="btn btn-outline-danger" onClick={deleteProfile}>Delete this profile</button>}
                   </div>
                 </div>
+                {profileMsg && <p className="text-danger mt-2 mb-0" role="alert">{profileMsg}</p>}
               </div>
             </section>
           </div>

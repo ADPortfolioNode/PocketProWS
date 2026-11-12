@@ -165,3 +165,19 @@ def test_profiles_are_strictly_separate():
     got_b = client.get(f"/api/profiles/{b['id']}").json()
     assert got_b["client"]["work_history"] == []
     assert got_b["documents"] == []
+
+
+def test_damaged_profile_store_does_not_break_creation():
+    """A profiles.json that is valid JSON but not an object (or outright
+    corrupt) used to make EVERY create fail with a 500 — the Add Client
+    button simply did nothing. The store must read as empty and recover."""
+    from backend import profiles as profiles_mod
+    f = profiles_mod._profiles_file()
+    f.write_text("[]")
+    p = _mk("Recovered Client")
+    assert p["client"]["name"] == "Recovered Client"
+    r = client.get("/api/profiles")
+    assert any(x["id"] == p["id"] for x in r.json()["profiles"])
+    f.write_text("{ not json")
+    p2 = _mk("After Corruption")
+    assert p2["client"]["name"] == "After Corruption"
