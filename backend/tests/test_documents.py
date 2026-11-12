@@ -89,3 +89,63 @@ def test_documents_permissions_note_on_first_load():
     p = _mk()
     r = client.get(f"/api/profiles/{p['id']}/documents")
     assert "Add / Edit / Delete" in r.json()["permissions"]
+
+
+OFFICE_RESUME = b"""Maria Lopez
+Office Administrator
+Email: maria.lopez@example.com
+Skills: Microsoft Excel, QuickBooks, data entry, customer service, bookkeeping, payroll, scheduling
+Experience: Front desk receptionist and accounts payable clerk for 6 years.
+"""
+
+
+def test_nontech_office_skills_extracted():
+    p = client.post("/api/profiles", json={"name": "Maria Lopez"}).json()
+    r = _upload(p["id"], OFFICE_RESUME, "maria.txt")
+    assert r.status_code == 200
+    skills = r.json()["extracted"]["skills"]
+    for s in ("excel", "quickbooks", "data entry", "customer service",
+              "bookkeeping", "payroll", "scheduling", "accounts payable",
+              "receptionist"):
+        assert s in skills, s
+    got = client.get(f"/api/profiles/{p['id']}").json()
+    assert "quickbooks" in got["client"]["skills"]
+
+
+def test_trades_and_healthcare_skills_extracted():
+    p = client.post("/api/profiles", json={"name": "James Carter"}).json()
+    text = (b"James Carter\nWarehouse associate and certified nursing aide.\n"
+            b"Skills: forklift, warehouse, shipping, patient care, cpr, vital signs\n")
+    r = _upload(p["id"], text, "james.txt")
+    assert r.status_code == 200
+    skills = r.json()["extracted"]["skills"]
+    for s in ("forklift", "warehouse", "shipping", "patient care", "cpr",
+              "vital signs"):
+        assert s in skills, s
+
+
+def test_skill_matching_respects_word_boundaries():
+    # "excellent" must not extract "excel"; "digital" must not extract
+    # "git"; "storage" must not extract "rag".
+    p = client.post("/api/profiles", json={"name": "Prose Person"}).json()
+    text = (b"A digital native with excellent communication skills and a "
+            b"history of storage room organization.\n")
+    r = _upload(p["id"], text, "prose.txt")
+    assert r.status_code == 200
+    skills = r.json()["extracted"]["skills"]
+    assert "excel" not in skills
+    assert "git" not in skills
+    assert "rag" not in skills
+
+
+def test_replace_document_nontech_redigests():
+    p = client.post("/api/profiles", json={"name": "Maria Lopez"}).json()
+    doc = _upload(p["id"], OFFICE_RESUME, "maria.txt").json()["document"]
+    r = client.post(f"/api/profiles/{p['id']}/documents/{doc['id']}/replace",
+                    files={"file": ("maria2.txt",
+                                    b"Skills: QuickBooks, invoicing, office management")})
+    assert r.status_code == 200
+    skills = r.json()["document"]["digest"]["skills"]
+    assert "quickbooks" in skills
+    assert "invoicing" in skills
+    assert "office management" in skills

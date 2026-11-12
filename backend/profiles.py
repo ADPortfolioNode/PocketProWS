@@ -79,7 +79,40 @@ KNOWN_SKILLS = ["python", "fastapi", "flask", "react", "javascript", "typescript
                 "openai", "sql", "postgres", "mongodb", "redis", "node", "vite",
                 "next.js", "html", "css", "git", "ci/cd", "kubernetes", "terraform",
                 "machine learning", "deep learning", "pytorch", "tensorflow",
-                "nlp", "embeddings", "vector", "api", "rest", "graphql"]
+                "nlp", "embeddings", "vector", "api", "rest", "graphql",
+                # Office & administration
+                "microsoft office", "microsoft excel", "excel", "microsoft word",
+                "powerpoint", "outlook", "google workspace", "data entry",
+                "typing", "bookkeeping", "quickbooks", "accounting", "payroll",
+                "invoicing", "accounts payable", "accounts receivable",
+                "scheduling", "filing", "receptionist", "office management",
+                # Business, sales & customer-facing work
+                "customer service", "sales", "retail", "cashier", "marketing",
+                "social media", "negotiation", "leadership", "project management",
+                "operations", "training", "supervision", "inventory",
+                "merchandising", "crm", "salesforce", "bilingual", "spanish",
+                # Healthcare & care work
+                "nursing", "patient care", "phlebotomy", "medical assistant",
+                "cpr", "first aid", "caregiving", "home health", "dental",
+                "pharmacy", "medical records", "hipaa", "vital signs", "ekg",
+                # Trades, warehouse & logistics
+                "warehouse", "forklift", "logistics", "shipping", "receiving",
+                "cdl", "driving", "delivery", "electrical", "plumbing",
+                "carpentry", "hvac", "welding", "maintenance", "janitorial",
+                "cleaning", "security", "construction", "painting",
+                "landscaping", "automotive", "mechanic",
+                # Food & hospitality
+                "food service", "food preparation", "cooking", "chef",
+                "bartending", "serving", "housekeeping", "hospitality",
+                "catering",
+                # Education, support & general
+                "teaching", "tutoring", "childcare", "lesson planning",
+                "help desk", "technical support", "troubleshooting"]
+
+# Word-boundary matching: "excel" must not fire on "excellent", "git" not
+# on "digital", "rag" not on "storage". Terms keep their list spelling in
+# the digest output.
+_SKILL_PATTERNS = {s: re.compile(rf"\b{re.escape(s)}\b") for s in KNOWN_SKILLS}
 
 
 # ---------------------------------------------------------------- store
@@ -424,7 +457,7 @@ def digest_text(text: str) -> dict:
     found = {
         "email": (re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", text) or [None])[0] or "",
         "phone": (re.search(r"(\+?1[-. ]?)?\(?\d{3}\)?[-. ]\d{3}[-. ]\d{4}", text) or [None])[0] or "",
-        "skills": sorted({s for s in KNOWN_SKILLS if s in low}),
+        "skills": sorted({s for s, pat in _SKILL_PATTERNS.items() if pat.search(low)}),
         "certifications": [],
         "education": [],
         "years": sorted(set(re.findall(r"\b(?:19|20)\d{2}\b", text))),
