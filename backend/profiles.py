@@ -137,13 +137,23 @@ def _load() -> dict:
     if not f.exists():
         return {}
     try:
-        return json.loads(f.read_text())
+        data = json.loads(f.read_text())
     except (json.JSONDecodeError, OSError):
         return {}
+    # A damaged store (valid JSON but not an object — e.g. a truncated or
+    # hand-edited file) must not break profile creation forever: callers
+    # assume a dict (.get / [pid] = ...), so anything else reads as empty
+    # and the next save rewrites a clean store.
+    return data if isinstance(data, dict) else {}
 
 
 def _save(profiles: dict) -> None:
-    _profiles_file().write_text(json.dumps(profiles, indent=2))
+    # Write-then-replace, so a crash or kill mid-write can never leave a
+    # truncated profiles.json behind for the next run to trip over.
+    f = _profiles_file()
+    tmp = f.with_name(f.name + ".tmp")
+    tmp.write_text(json.dumps(profiles, indent=2))
+    tmp.replace(f)
 
 
 def _blank_client() -> dict:
