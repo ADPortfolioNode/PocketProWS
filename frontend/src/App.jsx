@@ -40,6 +40,15 @@ const STEP_ALT = {
   applications: "Writing application notes in a notebook beside a laptop",
   follow_up: "A phone call follow-up with notes on the desk",
 };
+// Where each workflow step lives on the page: clicking a workflow card
+// (or a step row in the Workflow panel) jumps to that step's panel.
+const STEP_TARGETS = {
+  interview: "#interview", documents: "#documents", preferences: "#interview",
+  job_search: "#search", applications: "#agents", follow_up: "#agents",
+};
+// Steps whose panels only exist once a client is active: with no profile
+// yet, their cards lead to the client panel first — that is the flow.
+const PROFILE_FIRST_STEPS = ["documents", "applications", "follow_up"];
 const STEP_GUIDE = {
   interview: "Answer the concierge's questions one at a time — every answer is saved into the client's profile and shapes the search.",
   documents: "Add a resume, work history or certificates. Each file is digested into the skills and credentials the search can use.",
@@ -243,6 +252,8 @@ export default function App() {
 
   const who = header?.client_name || (activeId ? "(name not set yet — answer the first interview question)" : "nobody yet");
 
+  const stepTarget = (step) => (!activeId && PROFILE_FIRST_STEPS.includes(step) ? "#client" : STEP_TARGETS[step]);
+
   return (
     <div className="ppws-app">
       <nav className="navbar sticky-top ppws-navbar">
@@ -307,8 +318,9 @@ export default function App() {
                     <span className="ppws-step-badge">Step {i + 1}</span>
                   </div>
                   <div className="card-body">
-                    <h3 className="ppws-step-title">{WORKFLOW_LABELS[step]}</h3>
+                    <h3 className="ppws-step-title"><a className="ppws-step-link stretched-link" href={stepTarget(step)}>{WORKFLOW_LABELS[step]}</a></h3>
                     <p className="ppws-step-guide">{STEP_GUIDE[step]}</p>
+                    <p className="ppws-step-cta">{!activeId && PROFILE_FIRST_STEPS.includes(step) ? "Choose a client first" : "Open this step"} <span aria-hidden="true">→</span></p>
                   </div>
                 </article>
               </div>
@@ -346,7 +358,7 @@ export default function App() {
 
           {active && active.workflow && (
             <div className="col-12 col-lg-7">
-              <section className="card ppws-card h-100">
+              <section className="card ppws-card h-100" id="workflow">
                 <div className="card-body">
                   <h2 className="ppws-card-title">Workflow — {header?.client_name || active.id}</h2>
                   <div className="d-flex flex-wrap justify-content-between align-items-baseline gap-2">
@@ -359,7 +371,7 @@ export default function App() {
                   <ol className="ppws-steps">{active.workflow.steps.map((s) => (
                     <li key={s.step} className={`ppws-step${s.done ? " is-done" : ""}${s.step === active.workflow.current_step ? " is-current" : ""}`}>
                       <span className="ppws-step-dot" aria-hidden="true">{s.done ? "✓" : "○"}</span>
-                      <span className="ppws-step-name">{WORKFLOW_LABELS[s.step]}</span>
+                      <span className="ppws-step-name"><a className="ppws-step-row-link" href={stepTarget(s.step)}>{WORKFLOW_LABELS[s.step]}</a></span>
                       {s.step === active.workflow.current_step && <span className="badge ppws-current-badge">Current</span>}
                       {!s.done && (s.step === "applications" || s.step === "follow_up") && <button className="btn btn-sm ppws-btn-accent ms-auto" onClick={() => markStep(s.step)}>Mark done</button>}
                     </li>))}</ol>
@@ -370,7 +382,7 @@ export default function App() {
 
           {activeId && status && (
             <div className="col-12">
-              <section className="card ppws-card">
+              <section className="card ppws-card" id="agents">
                 <div className="card-body">
                   <h2 className="ppws-card-title">Agents — workflow status for {status.client_name || activeId}</h2>
                   <p>The agents run on demand and report here — the same status the concierge reports when you ask “what’s the status?” Applying to an employer stays outside the app; the agents record what happened, they never submit an application.</p>
@@ -409,7 +421,7 @@ export default function App() {
           )}
 
           <div className="col-12 col-lg-7">
-            <section className="card ppws-card h-100">
+            <section className="card ppws-card h-100" id="interview">
               <div className="card-body">
                 <div className="row g-3">
                   <div className="col-12 col-md-8">
@@ -442,7 +454,7 @@ export default function App() {
 
           {activeId && (
             <div className="col-12 col-lg-5">
-              <section className="card ppws-card h-100">
+              <section className="card ppws-card h-100" id="documents">
                 <div className="card-body">
                   <h2 className="ppws-card-title">Profile documents — Add / Edit / Delete</h2>
                   <p>You own these files. Add a resume, work history or certificate and I digest it into this profile&rsquo;s resource — skills, certifications, education — and into their RAG store. Edit renames a document; delete removes it from the resource and RAG too.</p>

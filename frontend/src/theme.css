@@ -279,6 +279,33 @@ body {
   line-height: 1.6;
   margin-bottom: 0;
 }
+.ppws-step-link {
+  color: inherit;
+  text-decoration: none;
+}
+.ppws-step-link:hover,
+.ppws-step-link:focus-visible {
+  color: var(--ppws-accent-dark);
+  text-decoration: underline;
+}
+.ppws-step-card:focus-within {
+  box-shadow: var(--ppws-shadow-lift);
+}
+.ppws-step-cta {
+  margin: 0.6rem 0 0;
+  font-weight: 600;
+  color: var(--ppws-accent-dark);
+}
+.ppws-step-row-link {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted var(--ppws-muted);
+}
+.ppws-step-row-link:hover,
+.ppws-step-row-link:focus-visible {
+  color: var(--ppws-accent-dark);
+  border-bottom-color: var(--ppws-accent-dark);
+}
 
 /* ---------- Live workflow progress ---------- */
 .ppws-progress {
