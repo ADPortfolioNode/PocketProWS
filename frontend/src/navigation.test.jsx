@@ -37,9 +37,9 @@ const STATUS = {
   saved_jobs: [],
 };
 
-function mockFetch(withProfile) {
+function mockFetch(withProfile, health) {
   const routes = {
-    "/api/health": { status: "ok", app: "PocketProWS", free_sources: ["remoteok"] },
+    "/api/health": health || { status: "ok", app: "PocketProWS", free_sources: ["remoteok"] },
     "/api/profiles": { profiles: withProfile ? [{ id: "p1", name: "Test Client" }] : [] },
     "/api/profiles/active": withProfile
       ? { active_profile_id: "p1", header: HEADER }
@@ -56,8 +56,8 @@ function mockFetch(withProfile) {
   });
 }
 
-async function renderApp(withProfile) {
-  vi.stubGlobal("fetch", mockFetch(withProfile));
+async function renderApp(withProfile, health) {
+  vi.stubGlobal("fetch", mockFetch(withProfile, health));
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -138,6 +138,24 @@ describe("workflow card navigation", () => {
     for (const a of rows) {
       expect(document.querySelector(a.getAttribute("href"))).toBeTruthy();
     }
+    root.unmount();
+  });
+
+  it("pill names a wrong backend instead of parroting its status", async () => {
+    // A foreign app holding the backend port answers health in its own
+    // shape (status "healthy", no app identity, no free_sources). The
+    // pill must call that out, not repeat "healthy" back at the user.
+    const { container, root } = await renderApp(false, { status: "healthy" });
+    const pill = container.querySelector(".ppws-status-pill");
+    expect(pill.textContent).toContain("wrong app");
+    expect(pill.textContent).not.toContain("Backend: ok");
+    root.unmount();
+  });
+
+  it("pill says Backend: ok for the real PocketProWS backend", async () => {
+    const { container, root } = await renderApp(false);
+    const pill = container.querySelector(".ppws-status-pill");
+    expect(pill.textContent).toContain("Backend: ok");
     root.unmount();
   });
 

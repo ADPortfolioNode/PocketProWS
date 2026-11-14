@@ -260,10 +260,20 @@ export default function App() {
         <div className="container d-flex align-items-center gap-2 flex-wrap py-1">
           <a className="navbar-brand ppws-brand" href="#top">PocketProWS <span className="ppws-brand-sub">— Recruiter Workstation</span></a>
           <div className="d-flex align-items-center gap-2 ms-auto flex-wrap">
-            <span className={`badge ppws-status-pill ${health ? "is-up" : "is-down"}`} title={health ? `Backend: ${health.status} · free sources: ${health.free_sources?.join(", ")}` : "Backend not reachable — search and chat will report honestly."}>
-              <span aria-hidden="true">●</span> {health ? `Backend: ${health.status}` : "Backend not reachable"}
-              <span className="d-none d-xl-inline">{health ? ` · free sources: ${health.free_sources?.join(", ")}` : " — search and chat will report honestly."}</span>
-            </span>
+            {(() => {
+              // The server answering /api calls must identify itself as
+              // PocketProWS. Anything else — another app holding the port,
+              // a stale dev server proxying to it — is a wrong backend,
+              // and the pill must say so instead of parroting its status.
+              const wrongApp = health && health.app !== "PocketProWS";
+              const ok = health && !wrongApp && health.status === "ok";
+              return (
+                <span className={`badge ppws-status-pill ${ok ? "is-up" : "is-down"}`} title={!health ? "Backend not reachable — search and chat will report honestly." : wrongApp ? `The server answering /api calls identifies as "${health.app || "unknown"}", not PocketProWS. This page is connected to a different program.` : `Backend: ${health.status} · free sources: ${health.free_sources?.join(", ")}`}>
+                  <span aria-hidden="true">●</span> {!health ? "Backend not reachable" : wrongApp ? "Backend: wrong app — not PocketProWS" : `Backend: ${health.status}`}
+                  <span className="d-none d-xl-inline">{!health ? " — search and chat will report honestly." : wrongApp ? " — restart with ./start.sh and open the address it prints." : ` · free sources: ${health.free_sources?.join(", ")}`}</span>
+                </span>
+              );
+            })()}
             <span className="badge ppws-client-chip">Client: {who}</span>
           </div>
         </div>
