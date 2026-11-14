@@ -229,9 +229,22 @@ echo "Frontend host port: ${POCKETPROWS_FE_PORT}"
 
 # --- Start ---
 "${VENV_PY}" -m uvicorn backend.main:app --host 127.0.0.1 --port "${POCKETPROWS_BE_PORT}" > /tmp/pocketprows-be.log 2>&1 &
-echo $! > /tmp/pocketprows-be.pid
+BE_PID=$!
+echo "${BE_PID}" > /tmp/pocketprows-be.pid
 (cd frontend && exec ./node_modules/.bin/vite) > /tmp/pocketprows-fe.log 2>&1 &
-echo $! > /tmp/pocketprows-fe.pid
+FE_PID=$!
+echo "${FE_PID}" > /tmp/pocketprows-fe.pid
+
+# Session record: this run's ports and process ids, assigned once here
+# and fixed for the session's whole lifetime — the pairing is never
+# renegotiated mid-session. stop-dev.sh ends exactly this session from
+# this file, and a later start replaces it wholesale.
+{
+    echo "POCKETPROWS_BE_PORT=${POCKETPROWS_BE_PORT}"
+    echo "POCKETPROWS_FE_PORT=${POCKETPROWS_FE_PORT}"
+    echo "POCKETPROWS_BE_PID=${BE_PID}"
+    echo "POCKETPROWS_FE_PID=${FE_PID}"
+} > /tmp/pocketprows-session.env
 
 # --- Wait for both servers to answer on their resolved ports ---
 wait_for() {
@@ -273,6 +286,25 @@ fi
 
 if command -v curl >/dev/null 2>&1; then
     if ! wait_for "http://127.0.0.1:${POCKETPROWS_BE_PORT}/api/health" "${BE_TIMEOUT}" || ! wait_for "http://127.0.0.1:${POCKETPROWS_FE_PORT}/" "${FE_TIMEOUT}"; then
+        fail_startup
+    fi
+    # Pairing check: the health endpoint reached THROUGH the frontend's
+    # proxy must be the PocketProWS backend itself. Another program can
+    # answer on a port and pass the plain waits while every /api call
+    # 404s against it — require the app identity before calling it up.
+    paired=""
+    for _try in 1 2 3 4 5 6 7 8 9 10; do
+        if curl -s "http://127.0.0.1:${POCKETPROWS_FE_PORT}/api/health" | grep -Eq '"app": ?"PocketProWS"'; then
+            paired=1
+            break
+        fi
+        sleep 1
+    done
+    if [ -z "${paired}" ]; then
+        echo "ERROR: the frontend is not connected to the PocketProWS backend —" >&2
+        echo "/api/health through the frontend (port ${POCKETPROWS_FE_PORT}) did not" >&2
+        echo "come from PocketProWS. Another program may be holding the backend" >&2
+        echo "port, or this frontend was started against a different backend." >&2
         fail_startup
     fi
 fi
