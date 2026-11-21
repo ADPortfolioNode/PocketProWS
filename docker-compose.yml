@@ -1,0 +1,45 @@
+# PocketProWS Docker stack — driven by ./start.sh, the standard startup
+# (./start.sh --native opts into the local venv/Vite processes instead).
+#
+# Silo rules, same as the other PocketPro apps:
+# - This project is its own silo ("pocketprows"); nothing here stops or
+#   references another app's containers.
+# - Container ports are fixed (backend 5003, frontend 3003). The HOST
+#   ports come from start.sh's resolver (POCKETPROWS_BE_PORT /
+#   POCKETPROWS_FE_PORT): 5003/3003 by default, bumped +1 while a foreign
+#   program holds them, fixed for the session once assigned.
+# - Data persists in the named volume below; `docker compose down` (and
+#   ./start.sh --down) never removes it.
+name: pocketprows
+
+services:
+  backend:
+    build: ./backend
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Chroma data lives on the volume, not the host's ~/workspace path
+      # the native flow defaults to.
+      POCKETPROWS_CHROMA_PATH: /data/chroma
+      POCKETPROWS_BE_PORT: "5003"
+    volumes:
+      - pocketprows-data:/data
+    ports:
+      - "127.0.0.1:${POCKETPROWS_BE_PORT:-5003}:5003"
+
+  frontend:
+    build: ./frontend
+    environment:
+      # Inside the stack the backend is the "backend" service, not
+      # 127.0.0.1; vite.config.js reads these for its /api proxy.
+      POCKETPROWS_BE_HOST: backend
+      POCKETPROWS_BE_PORT: "5003"
+      POCKETPROWS_FE_PORT: "3003"
+    ports:
+      - "127.0.0.1:${POCKETPROWS_FE_PORT:-3003}:3003"
+    depends_on:
+      - backend
+
+volumes:
+  pocketprows-data:

@@ -5,6 +5,14 @@
 # own by construction. The pid files and sweeps below are the backstop
 # for sessions started before the record existed or whose file was lost.
 SESSION_FILE=/tmp/pocketprows-session.env
+# A Docker session has no host processes to kill: bring this app's
+# compose stack down instead (its own project only; the data volume is
+# kept). Checked before the session file is removed below.
+if [ -f "${SESSION_FILE}" ] && grep -q '^POCKETPROWS_MODE=docker' "${SESSION_FILE}"; then
+    if command -v docker >/dev/null 2>&1; then
+        (cd "$(cd "$(dirname "$0")" && pwd)" && docker compose down) >/dev/null 2>&1 || true
+    fi
+fi
 if [ -f "${SESSION_FILE}" ]; then
     for key in POCKETPROWS_BE_PID POCKETPROWS_FE_PID; do
         pid="$(sed -n "s/^${key}=//p" "${SESSION_FILE}" | head -1)"
