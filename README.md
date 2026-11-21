@@ -35,6 +35,9 @@ One command, same pattern as the other PocketPro projects:
 ```
 Each port bumps +1 while taken (never stops another app); a stale PocketProWS server is stopped instead and the port is kept. `start-dev.sh` is an alias for `./start.sh`, and `./stop-dev.sh` stops the stack. The first run builds the venv/frontend automatically; `./start.sh --no-build` skips that.
 
+### Docker
+Same one command, with `--docker`: `./start.sh --docker` runs the Compose stack in `docker-compose.yml` (backend + frontend images, container ports fixed at 5003/3003) instead of the native processes. The same port resolver picks the host ports, the same health and backend-identity pairing checks gate startup, and `./start.sh --down` stops the stack. `--build`/`--rebuild` map to image builds. Chroma data persists in the `pocketprows-data` volume — separate from the native flow's data dir, and never removed by `--down`. API keys are read from the project `.env` when present. The native flow stays the default; `--docker` is opt-in per run.
+
 ## API keys (env vars, never commit)
 ```bash
 ADZUNA_APP_ID=... ADZUNA_APP_KEY=...        # free, developer.adzuna.com

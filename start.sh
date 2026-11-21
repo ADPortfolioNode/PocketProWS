@@ -5,8 +5,11 @@ set -euo pipefail
 # Same pattern as the other PocketPro projects: one command, persistent data
 # (the Chroma data dir is never wiped by this script), silo-safe ports.
 #
-# Usage: ./start.sh [--build] [--rebuild] [--no-build] [--test] [--down]
+# Usage: ./start.sh [--docker] [--build] [--rebuild] [--no-build] [--test] [--down]
 #   (default)  start the dev stack (builds the venv/frontend first if missing)
+#   --docker   run the Docker Compose stack (docker-compose.yml) instead of
+#              the native venv/Vite processes; same ports, same health and
+#              pairing checks, data in the pocketprows-data volume
 #   --build    recreate the venv from scratch + clean frontend install
 #              and build, then start
 #   --rebuild  reinstall backend deps + frontend install and build
@@ -35,6 +38,7 @@ REBUILD=false
 NO_BUILD=false
 TEST_REQUESTED=false
 DOWN=false
+DOCKER_MODE=false
 
 while [ "${#}" -gt 0 ]; do
     case "$1" in
@@ -43,9 +47,11 @@ while [ "${#}" -gt 0 ]; do
         --no-build) NO_BUILD=true; shift ;;
         --test) TEST_REQUESTED=true; shift ;;
         --down) DOWN=true; shift ;;
+        --docker) DOCKER_MODE=true; shift ;;
         -h|--help)
-            echo "Usage: $0 [--build] [--rebuild] [--no-build] [--test] [--down]"
+            echo "Usage: $0 [--docker] [--build] [--rebuild] [--no-build] [--test] [--down]"
             echo "  (default)  start the dev stack (builds first if the venv or frontend deps are missing)"
+            echo "  --docker   run the Docker Compose stack instead of native processes"
             echo "  --build    recreate the venv from scratch + clean frontend install and build, then start"
             echo "  --rebuild  reinstall backend deps + frontend install and build (cached), then start"
             echo "  --no-build start without building (errors if deps are missing)"
@@ -53,7 +59,7 @@ while [ "${#}" -gt 0 ]; do
             echo "  --down     stop the stack (data is kept)"
             exit 0
             ;;
-        *) echo "Unknown arg: $1" >&2; echo "Usage: $0 [--build] [--rebuild] [--no-build] [--test] [--down]" >&2; exit 2 ;;
+        *) echo "Unknown arg: $1" >&2; echo "Usage: $0 [--docker] [--build] [--rebuild] [--no-build] [--test] [--down]" >&2; exit 2 ;;
     esac
 done
 
@@ -190,26 +196,30 @@ run_build() {
     (cd frontend && npm run build)
 }
 
-if [ "${BUILD}" = true ]; then
-    run_build true
-elif [ "${REBUILD}" = true ]; then
-    run_build false
-elif [ "${NO_BUILD}" = false ] && { venv_missing || frontend_missing; }; then
-    echo "First run (or missing deps) — building once. Use --no-build to skip this."
-    run_build false
-fi
+# Native build + preflight. Docker mode skips both: the images carry
+# their own Python/Node, and --build/--rebuild map to image builds below.
+if [ "${DOCKER_MODE}" = false ]; then
+    if [ "${BUILD}" = true ]; then
+        run_build true
+    elif [ "${REBUILD}" = true ]; then
+        run_build false
+    elif [ "${NO_BUILD}" = false ] && { venv_missing || frontend_missing; }; then
+        echo "First run (or missing deps) — building once. Use --no-build to skip this."
+        run_build false
+    fi
 
-# --- Preflight: the servers must be runnable now ---
-VENV_PY="$(find_venv_python)"
-if [ -z "${VENV_PY}" ]; then
-    echo "ERROR: No venv python found (.venv/Scripts/python or .venv/bin/python)." >&2
-    echo "Run ./start.sh --build to create it." >&2
-    exit 1
-fi
-if frontend_missing; then
-    echo "ERROR: Vite not found (frontend/node_modules/.bin/vite)." >&2
-    echo "Run ./start.sh --build to install the frontend deps." >&2
-    exit 1
+    # --- Preflight: the servers must be runnable now ---
+    VENV_PY="$(find_venv_python)"
+    if [ -z "${VENV_PY}" ]; then
+        echo "ERROR: No venv python found (.venv/Scripts/python or .venv/bin/python)." >&2
+        echo "Run ./start.sh --build to create it." >&2
+        exit 1
+    fi
+    if frontend_missing; then
+        echo "ERROR: Vite not found (frontend/node_modules/.bin/vite)." >&2
+        echo "Run ./start.sh --build to install the frontend deps." >&2
+        exit 1
+    fi
 fi
 
 # --- Stop stale PocketProWS servers, then resolve ports ---
@@ -228,23 +238,59 @@ echo "Backend host port: ${POCKETPROWS_BE_PORT}"
 echo "Frontend host port: ${POCKETPROWS_FE_PORT}"
 
 # --- Start ---
-"${VENV_PY}" -m uvicorn backend.main:app --host 127.0.0.1 --port "${POCKETPROWS_BE_PORT}" > /tmp/pocketprows-be.log 2>&1 &
-BE_PID=$!
-echo "${BE_PID}" > /tmp/pocketprows-be.pid
-(cd frontend && exec ./node_modules/.bin/vite) > /tmp/pocketprows-fe.log 2>&1 &
-FE_PID=$!
-echo "${FE_PID}" > /tmp/pocketprows-fe.pid
+if [ "${DOCKER_MODE}" = true ]; then
+    # Docker stack: same resolved host ports, same session record, same
+    # health/pairing checks below — only the processes are containers.
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "ERROR: --docker needs Docker on PATH. Install Docker Desktop, then run again." >&2
+        exit 1
+    fi
+    if ! docker compose version >/dev/null 2>&1; then
+        echo "ERROR: 'docker compose' is not available. Update Docker Desktop, then run again." >&2
+        exit 1
+    fi
+    if ! docker info >/dev/null 2>&1; then
+        echo "ERROR: Docker is installed but not running. Start Docker Desktop, then run again." >&2
+        exit 1
+    fi
+    if [ "${BUILD}" = true ]; then
+        echo "Building the Docker images from scratch..."
+        docker compose build --no-cache
+    elif [ "${REBUILD}" = true ]; then
+        echo "Building the Docker images..."
+        docker compose build
+    fi
+    echo "Starting the PocketProWS Docker stack..."
+    if [ "${NO_BUILD}" = true ]; then
+        docker compose up -d --no-build
+    else
+        docker compose up -d
+    fi
+    {
+        echo "POCKETPROWS_MODE=docker"
+        echo "POCKETPROWS_BE_PORT=${POCKETPROWS_BE_PORT}"
+        echo "POCKETPROWS_FE_PORT=${POCKETPROWS_FE_PORT}"
+    } > /tmp/pocketprows-session.env
+else
+    "${VENV_PY}" -m uvicorn backend.main:app --host 127.0.0.1 --port "${POCKETPROWS_BE_PORT}" > /tmp/pocketprows-be.log 2>&1 &
+    BE_PID=$!
+    echo "${BE_PID}" > /tmp/pocketprows-be.pid
+    (cd frontend && exec ./node_modules/.bin/vite) > /tmp/pocketprows-fe.log 2>&1 &
+    FE_PID=$!
+    echo "${FE_PID}" > /tmp/pocketprows-fe.pid
 
-# Session record: this run's ports and process ids, assigned once here
-# and fixed for the session's whole lifetime — the pairing is never
-# renegotiated mid-session. stop-dev.sh ends exactly this session from
-# this file, and a later start replaces it wholesale.
-{
-    echo "POCKETPROWS_BE_PORT=${POCKETPROWS_BE_PORT}"
-    echo "POCKETPROWS_FE_PORT=${POCKETPROWS_FE_PORT}"
-    echo "POCKETPROWS_BE_PID=${BE_PID}"
-    echo "POCKETPROWS_FE_PID=${FE_PID}"
-} > /tmp/pocketprows-session.env
+    # Session record: this run's ports and process ids, assigned once here
+    # and fixed for the session's whole lifetime — the pairing is never
+    # renegotiated mid-session. stop-dev.sh ends exactly this session from
+    # this file, and a later start replaces it wholesale.
+    {
+        echo "POCKETPROWS_MODE=native"
+        echo "POCKETPROWS_BE_PORT=${POCKETPROWS_BE_PORT}"
+        echo "POCKETPROWS_FE_PORT=${POCKETPROWS_FE_PORT}"
+        echo "POCKETPROWS_BE_PID=${BE_PID}"
+        echo "POCKETPROWS_FE_PID=${FE_PID}"
+    } > /tmp/pocketprows-session.env
+fi
 
 # --- Wait for both servers to answer on their resolved ports ---
 wait_for() {
@@ -267,12 +313,19 @@ fail_startup() {
     else
         echo "PocketProWS failed to come up; stopping what was started." >&2
     fi
-    echo "--- backend log (tail) ---" >&2
-    tail -20 /tmp/pocketprows-be.log >&2 || true
-    echo "--- frontend log (tail) ---" >&2
-    tail -20 /tmp/pocketprows-fe.log >&2 || true
-    kill "$(cat /tmp/pocketprows-be.pid)" 2>/dev/null || true
-    kill "$(cat /tmp/pocketprows-fe.pid)" 2>/dev/null || true
+    if [ "${DOCKER_MODE}" = true ]; then
+        echo "--- container logs (tail) ---" >&2
+        docker compose logs --tail 20 >&2 || true
+        docker compose down >/dev/null 2>&1 || true
+        rm -f /tmp/pocketprows-session.env
+    else
+        echo "--- backend log (tail) ---" >&2
+        tail -20 /tmp/pocketprows-be.log >&2 || true
+        echo "--- frontend log (tail) ---" >&2
+        tail -20 /tmp/pocketprows-fe.log >&2 || true
+        kill "$(cat /tmp/pocketprows-be.pid)" 2>/dev/null || true
+        kill "$(cat /tmp/pocketprows-fe.pid)" 2>/dev/null || true
+    fi
     exit 1
 }
 
@@ -319,7 +372,11 @@ print_success() {
     echo "  Frontend: http://127.0.0.1:${POCKETPROWS_FE_PORT}"
     echo ""
     echo "To view logs, run:"
-    echo "  tail -f /tmp/pocketprows-be.log /tmp/pocketprows-fe.log"
+    if [ "${DOCKER_MODE}" = true ]; then
+        echo "  docker compose logs -f"
+    else
+        echo "  tail -f /tmp/pocketprows-be.log /tmp/pocketprows-fe.log"
+    fi
     echo "To stop (data is kept), run:"
     echo "  ./start.sh --down"
 }
