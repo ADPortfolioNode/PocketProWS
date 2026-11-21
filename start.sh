@@ -5,11 +5,11 @@ set -euo pipefail
 # Same pattern as the other PocketPro projects: one command, persistent data
 # (the Chroma data dir is never wiped by this script), silo-safe ports.
 #
-# Usage: ./start.sh [--docker] [--build] [--rebuild] [--no-build] [--test] [--down]
-#   (default)  start the dev stack (builds the venv/frontend first if missing)
-#   --docker   run the Docker Compose stack (docker-compose.yml) instead of
-#              the native venv/Vite processes; same ports, same health and
+# Usage: ./start.sh [--native] [--build] [--rebuild] [--no-build] [--test] [--down]
+#   (default)  start the Docker Compose stack (docker-compose.yml), the
+#              standard PocketPro startup; same ports, same health and
 #              pairing checks, data in the pocketprows-data volume
+#   --native   run the local venv/Vite processes instead of Docker
 #   --build    recreate the venv from scratch + clean frontend install
 #              and build, then start
 #   --rebuild  reinstall backend deps + frontend install and build
@@ -38,7 +38,9 @@ REBUILD=false
 NO_BUILD=false
 TEST_REQUESTED=false
 DOWN=false
-DOCKER_MODE=false
+# Docker is the standard startup (same as the other PocketPro apps);
+# --native opts into the local venv/Vite processes instead.
+DOCKER_MODE=true
 
 while [ "${#}" -gt 0 ]; do
     case "$1" in
@@ -48,18 +50,19 @@ while [ "${#}" -gt 0 ]; do
         --test) TEST_REQUESTED=true; shift ;;
         --down) DOWN=true; shift ;;
         --docker) DOCKER_MODE=true; shift ;;
+        --native) DOCKER_MODE=false; shift ;;
         -h|--help)
-            echo "Usage: $0 [--docker] [--build] [--rebuild] [--no-build] [--test] [--down]"
-            echo "  (default)  start the dev stack (builds first if the venv or frontend deps are missing)"
-            echo "  --docker   run the Docker Compose stack instead of native processes"
-            echo "  --build    recreate the venv from scratch + clean frontend install and build, then start"
-            echo "  --rebuild  reinstall backend deps + frontend install and build (cached), then start"
-            echo "  --no-build start without building (errors if deps are missing)"
+            echo "Usage: $0 [--native] [--build] [--rebuild] [--no-build] [--test] [--down]"
+            echo "  (default)  start the Docker Compose stack (builds images first if missing)"
+            echo "  --native   run the local venv/Vite processes instead of Docker"
+            echo "  --build    rebuild from scratch (Docker: images, no cache; native: recreate the venv + clean frontend install), then start"
+            echo "  --rebuild  rebuild (cached), then start"
+            echo "  --no-build start without building (errors if the images or deps are missing)"
             echo "  --test     monitored startup: wait for both health endpoints, report PASS/FAIL"
             echo "  --down     stop the stack (data is kept)"
             exit 0
             ;;
-        *) echo "Unknown arg: $1" >&2; echo "Usage: $0 [--docker] [--build] [--rebuild] [--no-build] [--test] [--down]" >&2; exit 2 ;;
+        *) echo "Unknown arg: $1" >&2; echo "Usage: $0 [--native] [--build] [--rebuild] [--no-build] [--test] [--down]" >&2; exit 2 ;;
     esac
 done
 
@@ -242,15 +245,18 @@ if [ "${DOCKER_MODE}" = true ]; then
     # Docker stack: same resolved host ports, same session record, same
     # health/pairing checks below — only the processes are containers.
     if ! command -v docker >/dev/null 2>&1; then
-        echo "ERROR: --docker needs Docker on PATH. Install Docker Desktop, then run again." >&2
+        echo "ERROR: Docker is not on PATH. Install Docker Desktop, then run again" >&2
+        echo "— or run ./start.sh --native for the local venv/Vite flow." >&2
         exit 1
     fi
     if ! docker compose version >/dev/null 2>&1; then
-        echo "ERROR: 'docker compose' is not available. Update Docker Desktop, then run again." >&2
+        echo "ERROR: 'docker compose' is not available. Update Docker Desktop, then run again" >&2
+        echo "— or run ./start.sh --native for the local venv/Vite flow." >&2
         exit 1
     fi
     if ! docker info >/dev/null 2>&1; then
-        echo "ERROR: Docker is installed but not running. Start Docker Desktop, then run again." >&2
+        echo "ERROR: Docker is installed but not running. Start Docker Desktop, then run again" >&2
+        echo "— or run ./start.sh --native for the local venv/Vite flow." >&2
         exit 1
     fi
     if [ "${BUILD}" = true ]; then

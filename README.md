@@ -27,16 +27,17 @@ Constraints, same as the other PocketPro apps:
 ## Setup (dev)
 One command, same pattern as the other PocketPro projects:
 ```bash
-./start.sh            # backend :5003, frontend :3003 (Vite dev, proxies /api)
+./start.sh            # Docker stack: backend :5003, frontend :3003 (bumps +1 while taken)
 ./start.sh --test     # monitored startup: waits for both health endpoints, PASS/FAIL
-./start.sh --build    # recreate the venv + clean frontend install and build, then start
-./start.sh --rebuild  # reinstall deps + rebuild (cached), then start
+./start.sh --build    # rebuild the images from scratch, then start
+./start.sh --rebuild  # rebuild the images (cached), then start
 ./start.sh --down     # stop the stack (data is kept)
+./start.sh --native   # local venv/Vite processes instead of Docker
 ```
-Each port bumps +1 while taken (never stops another app); a stale PocketProWS server is stopped instead and the port is kept. `start-dev.sh` is an alias for `./start.sh`, and `./stop-dev.sh` stops the stack. The first run builds the venv/frontend automatically; `./start.sh --no-build` skips that.
+Each port bumps +1 while taken (never stops another app); a stale PocketProWS server is stopped instead and the port is kept. `start-dev.sh` is an alias for `./start.sh`, and `./stop-dev.sh` stops the stack. The first run builds the images automatically; `./start.sh --no-build` skips that. With `--native`, the first run builds the venv/frontend instead.
 
 ### Docker
-Same one command, with `--docker`: `./start.sh --docker` runs the Compose stack in `docker-compose.yml` (backend + frontend images, container ports fixed at 5003/3003) instead of the native processes. The same port resolver picks the host ports, the same health and backend-identity pairing checks gate startup, and `./start.sh --down` stops the stack. `--build`/`--rebuild` map to image builds. Chroma data persists in the `pocketprows-data` volume — separate from the native flow's data dir, and never removed by `--down`. API keys are read from the project `.env` when present. The native flow stays the default; `--docker` is opt-in per run.
+`./start.sh` runs the Compose stack in `docker-compose.yml` (backend + frontend images, container ports fixed at 5003/3003) — the standard startup, same as the other PocketPro apps. The same port resolver picks the host ports, the same health and backend-identity pairing checks gate startup, and `./start.sh --down` stops the stack. `--build`/`--rebuild` map to image builds. Chroma data persists in the `pocketprows-data` volume — separate from the native flow's data dir, and never removed by `--down`. API keys are read from the project `.env` when present. `./start.sh --native` opts into the local venv/Vite processes instead; `--docker` is still accepted and means the default.
 
 ## API keys (env vars, never commit)
 ```bash

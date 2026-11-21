@@ -1,4 +1,5 @@
-# PocketProWS Docker stack — driven by ./start.sh --docker.
+# PocketProWS Docker stack — driven by ./start.sh, the standard startup
+# (./start.sh --native opts into the local venv/Vite processes instead).
 #
 # Silo rules, same as the other PocketPro apps:
 # - This project is its own silo ("pocketprows"); nothing here stops or
