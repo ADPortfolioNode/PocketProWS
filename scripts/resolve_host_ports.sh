@@ -5,12 +5,16 @@
 # host port by one (up to 10 tries from the preferred port) and wire the
 # resolved port through to the backend, the frontend and the printed URLs.
 #
-# The check is a real TCP bind test, so any holder counts: another
-# app's container (a published port is a host listener), a host process,
-# or a stale server. A Docker-only check would miss host processes, and
-# a `docker ps` check would miss a stopped container — neither matters
-# here, because this stack runs on the host: if nothing is listening on
-# the port, our server can bind it.
+# The check is a UNION of probes (bind test, connect probe, listener
+# listings): a port counts as in use when ANY probe says so. No single
+# probe is trustworthy everywhere — on Windows a bind test with
+# SO_REUSEADDR can succeed against a real listener (proven 2026-11-21:
+# the resolver passed 5003 as free, then uvicorn and the Docker daemon
+# both failed to bind it with error 10048, and the holder was not
+# PocketProWS). A Docker-only check would miss host processes, and a
+# `docker ps` check would miss a stopped container — neither matters
+# here, because if anything is listening on the port, our server cannot
+# bind it, whatever the holder is.
 #
 # An already-set POCKETPROWS_*_PORT is honoured only when it is free;
 # when it is busy we bump from it instead of trusting it blindly.
@@ -80,16 +84,22 @@ find_python() {
 host_port_in_use() {
     local port="$1"
 
-    # 1. Real bind test (authoritative for a host-process stack). We try
-    # to bind the port exactly as our server will: a bind fails only when
-    # the port is really held. A connect test would be wrong here — when
-    # a holder's accept queue is full, the connect times out and looks
-    # "free" even though the port is taken.
+    # Union of probes: the port is in use when ANY probe says so, and
+    # free only when every available probe says free. Each probe covers
+    # a hole in the others (see the header comment).
     if find_python; then
+        # Probe 1+2 in one Python pass. Bind test: fails only when the
+        # port is really held (a connect test alone would be wrong —
+        # when a holder's accept queue is full, the connect times out
+        # and looks "free"). Connect probe: catches the Windows case
+        # the bind test misses, where SO_REUSEADDR lets our bind
+        # succeed against a live listener — if something accepts a
+        # connection, the port is held, full stop.
         "${PY_CMD[@]}" -c 'import errno, socket, sys
 port = int(sys.argv[1])
-for family, addr in ((socket.AF_INET, ("127.0.0.1", port)),
-                     (socket.AF_INET6, ("::1", port, 0, 0))):
+addrs = ((socket.AF_INET, ("127.0.0.1", port)),
+         (socket.AF_INET6, ("::1", port, 0, 0)))
+for family, addr in addrs:
     try:
         s = socket.socket(family, socket.SOCK_STREAM)
     except OSError:
@@ -103,29 +113,47 @@ for family, addr in ((socket.AF_INET, ("127.0.0.1", port)),
             sys.exit(0)
         continue
     s.close()
+for family, addr in addrs:
+    try:
+        s = socket.socket(family, socket.SOCK_STREAM)
+    except OSError:
+        continue
+    s.settimeout(0.5)
+    try:
+        s.connect(addr)
+    except OSError:
+        s.close()
+        continue
+    s.close()
+    sys.exit(0)
 sys.exit(1)' "$port" 2>/dev/null
-        return $?
+        if [ $? -eq 0 ]; then
+            return 0
+        fi
     fi
 
-    # 2. ss / netstat listener listings.
+    # Probe 3: ss / netstat listener listings.
     if command -v ss >/dev/null 2>&1; then
-        ss -ltn 2>/dev/null | grep -qE ":${port}[[:space:]]"
-        return $?
+        if ss -ltn 2>/dev/null | grep -qE ":${port}[[:space:]]"; then
+            return 0
+        fi
+    elif command -v netstat >/dev/null 2>&1; then
+        if netstat -ltn 2>/dev/null | grep -qE ":${port}[[:space:]]"; then
+            return 0
+        fi
     fi
 
-    if command -v netstat >/dev/null 2>&1; then
-        netstat -ltn 2>/dev/null | grep -qE ":${port}[[:space:]]"
-        return $?
-    fi
-
-    # 3. Windows (Git Bash): ask PowerShell for a listener on the port.
+    # Probe 4: Windows (Git Bash) — PowerShell's listener table is
+    # authoritative there and is consulted even when Python exists;
+    # gating it behind "no Python" is what let a held 5003 through.
     case "$(uname -s 2>/dev/null || echo unknown)" in
         MINGW*|MSYS*|CYGWIN*)
             if command -v powershell.exe >/dev/null 2>&1; then
-                powershell.exe -NoProfile -Command \
+                if powershell.exe -NoProfile -Command \
                     "if (Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1) { exit 0 } else { exit 1 }" \
-                    >/dev/null 2>&1
-                return $?
+                    >/dev/null 2>&1; then
+                    return 0
+                fi
             fi
             ;;
     esac

@@ -266,17 +266,21 @@ if [ "${DOCKER_MODE}" = true ]; then
         echo "Building the Docker images..."
         docker compose build
     fi
+    # Session record BEFORE `up`: if the up fails partway (a port the
+    # resolver could not see being the known case), the half-created
+    # stack must still be stoppable — stop-dev.sh keys its compose down
+    # off this file.
+    {
+        echo "POCKETPROWS_MODE=docker"
+        echo "POCKETPROWS_BE_PORT=${POCKETPROWS_BE_PORT}"
+        echo "POCKETPROWS_FE_PORT=${POCKETPROWS_FE_PORT}"
+    } > /tmp/pocketprows-session.env
     echo "Starting the PocketProWS Docker stack..."
     if [ "${NO_BUILD}" = true ]; then
         docker compose up -d --no-build
     else
         docker compose up -d
     fi
-    {
-        echo "POCKETPROWS_MODE=docker"
-        echo "POCKETPROWS_BE_PORT=${POCKETPROWS_BE_PORT}"
-        echo "POCKETPROWS_FE_PORT=${POCKETPROWS_FE_PORT}"
-    } > /tmp/pocketprows-session.env
 else
     "${VENV_PY}" -m uvicorn backend.main:app --host 127.0.0.1 --port "${POCKETPROWS_BE_PORT}" > /tmp/pocketprows-be.log 2>&1 &
     BE_PID=$!
