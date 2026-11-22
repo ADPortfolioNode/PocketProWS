@@ -583,10 +583,11 @@ export default function App() {
                 <div className="row g-3">
                   <div className="col-12 col-md-8">
                     <h2 className="ppws-card-title">Concierge recruiter</h2>
-                    <p>Hi! I&rsquo;m your friendly recruiter concierge. The resume comes first — add it under Documents and I pull the skills from it — then I ask who our client is (the client seeks work, the employer hires) and go one question at a time. Each answer is saved into that profile&rsquo;s resource, and I tell you what I saved.</p>
+                    <p>Hi! I&rsquo;m your friendly recruiter concierge. The resume comes first — add it under Documents and I pull the skills from it — then I ask who our client is (the client seeks work, the employer hires) and go one question at a time. Each answer is saved into that profile&rsquo;s resource, and I tell you what I saved. Every question says why I&rsquo;m asking it, and in the chat below you can ask me &ldquo;explain my workflow&rdquo; anytime — I&rsquo;ll walk the whole process and show exactly where this client stands in it.</p>
                     {activeId && interview && !interview.complete && (
                       <div className="ppws-interview">
                         <p><strong>Question {interview.step + 1} of {interview.total}:</strong> {interview.next_question}</p>
+                        {interview.why && <p className="ppws-why">Why I ask: {interview.why}</p>}
                         <div className="d-flex flex-column flex-sm-row gap-2">
                           <input className="form-control" aria-label="interview answer" value={interviewA} onChange={(e) => setInterviewA(e.target.value)} placeholder="Your answer…" />
                           <button className="btn ppws-btn-accent" onClick={answerInterview}>Save answer</button>
@@ -600,7 +601,7 @@ export default function App() {
                         <div className="ppws-chat-empty">
                           <p className="mb-2">Ask me anything about this client&rsquo;s search — or start with one of these:</p>
                           <div className="ppws-chat-chips">
-                            {["What jobs match this client's resume?", "How are we doing?", "Remote Python jobs"].map((chip) => (
+                            {["Explain my workflow", "What jobs match this client's resume?", "How are we doing?", "Remote Python jobs"].map((chip) => (
                               <button key={chip} type="button" className="btn btn-sm ppws-chip" onClick={() => ask(chip)}>{chip}</button>
                             ))}
                           </div>

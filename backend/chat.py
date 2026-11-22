@@ -12,6 +12,14 @@ Keyless retrieved-text fallback (PocketPro pattern). Two modes:
   interview answers (Chroma, filtered by profile_id) plus saved jobs that
   match. Without a profile selected, it answers from saved jobs only and
   says so — it never mixes one profile's data into another's answers.
+
+Helpful and verbose, for transparency (Anthony, 2026-11-22): the
+concierge teaches the workflow while it works it — a guide intent
+("explain my workflow", "what do I do next") returns the full
+walkthrough marked with the client's position; status answers are
+narrated briefings (what the step is, what the numbers mean, the next
+best step); Q&A answers close with a "How I answered" line naming what
+was searched; and every interview question carries why it is asked.
 """
 import re
 
@@ -31,6 +39,64 @@ def _is_status_question(q: str) -> bool:
     if any(p in lower for p in STATUS_PHRASES):
         return True
     return any(re.search(rf"\b{re.escape(w)}\b", lower) for w in STATUS_WORDS)
+
+
+# Guide routing (Anthony, 2026-11-22): the concierge teaches the
+# workflow — "explain my workflow", "what do I do next", "how does
+# this work" get the full walkthrough, marked with where this client
+# stands in it.
+GUIDE_PHRASES = ("explain my workflow", "explain the workflow", "explain your workflow",
+                 "how does this work", "how does it work", "how this works",
+                 "what do i do next", "what should i do next", "what's next for me",
+                 "whats next", "walk me through", "guide me", "help me understand",
+                 "explain the process", "explain my process")
+
+
+def _is_guide_question(q: str) -> bool:
+    lower = q.lower().strip()
+    if lower in ("help", "help me", "?"):
+        return True
+    return any(p in lower for p in GUIDE_PHRASES)
+
+
+STEP_GUIDE = [
+    ("documents", "Documents — the resume goes in first. I read it and pull out the skills, certifications, education and contact details. Everything later — matching, the disqualifier filter, cover letters — is built from what the resume says, so this step is the foundation."),
+    ("interview", "Interview — eleven short questions, one at a time, in the Concierge panel. They turn the resume into a person: target roles, current role, work history, where they're based, remote or on-site, full-time or contract, salary aim, and what cover letters should highlight. Skills are never typed here — they're confirmed from the resume."),
+    ("preferences", "Preferences — the interview answers become the search settings. Every search from here on runs on what this client actually wants, not generic keywords."),
+    ("job_search", "Job search — six boards (Adzuna, Jooble, USAJOBS, Remotive, RemoteOK, Arbeitnow) searched with those preferences. Postings whose stated requirements would disqualify the client — a degree above theirs, a certification they don't hold, a required clearance — are omitted and reported with reasons. The rest are saved to the profile."),
+    ("applications", "Applications — every saved job can get an apply pack: a fit check against the resume, a cover letter written for that employer, and draft answers to the standard questions. You review everything and submit it yourself — nothing is ever sent automatically. Statuses move saved → applied → interviewing → offer → hired as things progress."),
+    ("follow_up", "Follow-up — an application that goes quiet gets a follow-up draft before it goes cold. I flag what's due and have the note written; you send it."),
+]
+
+
+def _guide_answer(profile_id: str = "") -> str:
+    done, current = set(), ""
+    who = ""
+    if profile_id:
+        profile = profiles_mod.get_profile(profile_id)
+        if profile:
+            who = profile["client"].get("name") or ""
+            ws = profiles_mod.workflow_state(profile)
+            current = ws["current_step"]
+            done = {s["step"] for s in ws["steps"] if s["done"]}
+    head = (f"Here's the workflow{' for ' + who if who else ''}, step by step — "
+            f"and where things stand:")
+    lines = [head]
+    for i, (key, text) in enumerate(STEP_GUIDE, 1):
+        if key in done:
+            mark = "✓ done"
+        elif key == current:
+            mark = "→ you are here"
+        else:
+            mark = "upcoming"
+        lines.append(f"{i}. [{mark}] {text}")
+    if current:
+        nxt = next((t for k, t in STEP_GUIDE if k == current), "")
+        lines.append(f"Your next move is the step marked → — {nxt.split('—')[0].strip().lower()} is where the work is right now. "
+                     "Ask me 'how are we doing' anytime for live numbers, or just ask about a role and I'll search what's saved.")
+    else:
+        lines.append("Create a client profile to start — the workflow above lights up step by step as you go.")
+    return "\n".join(lines)
 
 
 def _effective_query(q: str, history) -> str:
@@ -70,6 +136,8 @@ def _answer_once(q: str, profile_id: str = "", mode: str = "", history=None) -> 
         if "error" not in st:
             return {"answer": agents_mod.status_summary_text(st),
                     "jobs": [], "mode": "status", "status": st}
+    if q and _is_guide_question(q) and mode != "interview":
+        return {"answer": _guide_answer(profile_id), "jobs": [], "mode": "guide"}
     if mode == "interview" and profile_id:
         profile = profiles_mod.get_profile(profile_id)
         if not profile:
@@ -77,7 +145,10 @@ def _answer_once(q: str, profile_id: str = "", mode: str = "", history=None) -> 
                     "jobs": [], "mode": "interview", "interview": {"error": "profile not found"}}
         if not q:
             st = profiles_mod.interview_status(profile)
-            return {"answer": st["next_question"] or "Interview complete!",
+            text = st["next_question"] or "Interview complete!"
+            if st.get("why"):
+                text += f"\n(Why I ask: {st['why']})"
+            return {"answer": text,
                     "jobs": [], "mode": "interview", "interview": st}
         res = profiles_mod.answer_interview(profile_id, q)
         if res.get("error"):
@@ -87,16 +158,26 @@ def _answer_once(q: str, profile_id: str = "", mode: str = "", history=None) -> 
                                   "next_question": res.get("next_question"),
                                   "step": res.get("step"), "total": res.get("total")}}
         if res.get("complete"):
-            text = f"All done — thank you! {res['saved']} Here's what I have for you: {res['summary']}"
+            text = (f"All done — thank you! {res['saved']} Here's what I have for you: {res['summary']} "
+                    "From here the workflow moves to Preferences and Job search — ask me "
+                    "'explain my workflow' and I'll show you the whole map.")
         else:
             text = f"{res['saved']} Next question: {res['next_question']}"
+            fresh = profiles_mod.get_profile(profile_id) or profile
+            why = profiles_mod.interview_status(fresh).get("why", "")
+            if why:
+                text += f"\n(Why I ask: {why})"
+        fresh = profiles_mod.get_profile(profile_id) or profile
         return {"answer": text, "jobs": [], "mode": "interview",
                 "interview": {"complete": res["complete"], "step": res.get("step"),
                               "total": res.get("total"),
                               "next_question": res.get("next_question"),
+                              "why": profiles_mod.interview_status(fresh).get("why", ""),
                               "summary": res.get("summary")}}
     if not q:
-        return {"answer": "Ask me about a role, a skill, or a location — for example, 'remote Python jobs'.",
+        return {"answer": ("Ask me about a role, a skill, or a location — for example, 'remote Python jobs'. "
+                           "Or ask 'how are we doing' for a full status briefing, or 'explain my workflow' "
+                           "and I'll walk you through how all of this works, step by step."),
                 "jobs": [], "mode": "fallback"}
     effective = _effective_query(q, history or [])
     found = search_jobs_text(effective, n=5)
@@ -111,10 +192,13 @@ def _answer_once(q: str, profile_id: str = "", mode: str = "", history=None) -> 
         hint = (f" for {who}" if who else "")
         return {
             "answer": ("I don't have any saved jobs or client notes matching that yet"
-                       f"{hint}. Run a job search first (Adzuna, Jooble, USAJOBS, "
-                       "Remotive, RemoteOK or Arbeitnow), or add a document / answer "
-                       "an interview question, and I'll match against it. "
-                       "No LLM key is configured, so I'm answering from saved material only."),
+                       f"{hint}. Here's how this works: I can only answer from material "
+                       "that's been saved to this profile — the resume and documents under "
+                       "Documents, the interview answers, and jobs a search has saved. "
+                       "Run a job search first (Adzuna, Jooble, USAJOBS, Remotive, RemoteOK "
+                       "or Arbeitnow), or add a document / answer an interview question, and "
+                       "I'll match against it. No LLM key is configured, so I'm answering "
+                       "from saved material only — nothing is invented."),
             "jobs": [], "mode": "fallback",
         }
     lines = []
@@ -126,6 +210,14 @@ def _answer_once(q: str, profile_id: str = "", mode: str = "", history=None) -> 
         lines += [f"- {j.get('title','')} — employer {j.get('company','')} ({j.get('location','')}) — {j.get('url','')}"
                   for j in found]
     who_line = f" for client {who}" if who else ""
+    searched = []
+    if profile_id:
+        searched.append(f"{len(client_bits)} passage(s) from {who}'s documents and interview notes")
+    searched.append(f"{len(found)} saved job(s)")
+    lines.append("")
+    lines.append(f"How I answered: I searched {' and '.join(searched)} for '{effective}'. "
+                 "No LLM key is configured, so this is the saved material itself, quoted — "
+                 "nothing added. Ask 'explain my workflow' anytime for the full picture.")
     return {"answer": f"Here's what I found{who_line} for '{q}':\n" + "\n".join(lines),
             "jobs": found, "mode": "fallback",
             "client_notes": client_bits}
