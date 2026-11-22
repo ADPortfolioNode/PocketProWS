@@ -233,13 +233,51 @@ def create_profile(name: str = "") -> dict:
     profile = {"id": pid, "client": client_data,
                "interview_step": 0, "interview_answers": {},
                "documents": [], "saved_jobs": [],
-               "workflow_done": []}
+               "workflow_done": [], "chat": []}
     profiles[pid] = profile
     _save(profiles)
     # First profile becomes the active one, so the header has something to show.
     if not _active_file().exists():
         set_active_profile(pid)
     return profile
+
+
+CHAT_CAP = 60
+
+
+def get_chat(profile_id: str):
+    """The profile's concierge conversation, oldest first (None when the
+    profile does not exist)."""
+    p = get_profile(profile_id)
+    if not p:
+        return None
+    return p.get("chat") or []
+
+
+def append_chat(profile_id: str, role: str, text: str):
+    """Append one message to the profile's conversation, keeping the
+    newest CHAT_CAP messages. Returns the updated history, or None."""
+    from datetime import datetime, timezone
+    profiles = _load()
+    p = profiles.get(profile_id)
+    if not p:
+        return None
+    chat = p.setdefault("chat", [])
+    chat.append({"role": role, "text": text,
+                 "ts": datetime.now(timezone.utc).isoformat()})
+    del chat[:-CHAT_CAP]
+    _save(profiles)
+    return chat
+
+
+def clear_chat(profile_id: str) -> bool:
+    profiles = _load()
+    p = profiles.get(profile_id)
+    if not p:
+        return False
+    p["chat"] = []
+    _save(profiles)
+    return True
 
 
 def list_profiles() -> list:

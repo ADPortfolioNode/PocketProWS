@@ -112,6 +112,15 @@ digest is re-digested from its stored file on load, and its
 **Re-digest** button (`POST .../documents/{doc_id}/redigest`) does
 the same on demand — no re-upload needed.
 
+The concierge chat is a real conversation: a per-profile transcript
+(`GET`/`DELETE /api/profiles/{id}/chat`, newest 60 messages kept) is
+recorded server-side and rendered as bubbles with starter-question
+chips, job cards under the answers that found them, Enter-to-send and
+a Clear chat. Short follow-ups ("and in Texas?") are searched
+together with the previous question, and status questions ("How are
+we doing?") are part of the same transcript. Interview turns keep
+their own guided panel and are not recorded as chat.
+
 ## Tests
 ```bash
 .venv/bin/python -m pytest backend/tests/ -q
