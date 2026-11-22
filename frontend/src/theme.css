@@ -515,6 +515,12 @@ body {
   color: var(--ppws-muted);
   align-self: center;
 }
+/* Interview why-line (2026-11-22): every question explains itself. */
+.ppws-why {
+  color: var(--ppws-muted);
+  font-size: 0.92rem;
+  margin-top: -0.4rem;
+}
 /* Apply pack (2026-11-22) */
 .ppws-pack {
   margin-top: 0.6rem;

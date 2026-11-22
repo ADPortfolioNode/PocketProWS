@@ -524,14 +524,50 @@ def profile_status(profile_id: str, follow_up_days: int = DEFAULT_FOLLOW_UP_DAYS
             "last_runs": (profile.get("agent_runs") or [])[:6]}
 
 
+STEP_MEANING = {
+    "documents": "the resume goes in first — skills, certifications, education and contact are pulled from it, and everything later (matching, letters, answers) is built from what it says",
+    "interview": "eleven short questions, one at a time, that turn the resume into a person — target roles, place, remote preference, salary, cover-letter highlights",
+    "preferences": "the interview answers become the search preferences, so every search runs on what this client actually wants",
+    "job_search": "the boards are searched with those preferences; postings whose stated requirements would disqualify the client are omitted and reported, the rest are saved here",
+    "applications": "each saved job gets an apply pack — fit check, cover letter, draft answers — and a status you move as it progresses; you review and submit, nothing is sent automatically",
+    "follow_up": "applications that go quiet get a follow-up draft before they go cold — silence is how offers are lost",
+}
+
+
+def _next_step(status: dict) -> str:
+    res = status["resources"]
+    pipe = status["pipeline"]["counts"]
+    if res["document_count"] == 0:
+        return ("Add the resume under Documents — it is the foundation "
+                "everything else is built from.")
+    if status["current_step"] in ("documents", "interview", "preferences"):
+        return ("Work through the interview in the Concierge panel — each "
+                "answer sharpens the searches that follow.")
+    if status["pipeline"]["total"] == 0:
+        return ("Run a job search — the profile is ready and no jobs are "
+                "saved yet.")
+    if status["follow_ups_due"]:
+        return ("Send the follow-up drafts that are due — they are written "
+                "and waiting in the Agents panel.")
+    if pipe["saved"] > 0:
+        return (f"Open an apply pack on one of the {pipe['saved']} saved "
+                f"job(s) and apply — that is the step that moves this forward.")
+    return "Run a fresh job search to keep new postings coming in."
+
+
 def status_summary_text(status: dict) -> str:
-    """Plain-language status the concierge can speak, from real numbers."""
+    """Plain-language status the concierge can speak, from real numbers —
+    narrated (Anthony, 2026-11-22): where we are, what it means, and
+    what to do next, so the workflow explains itself."""
     if "error" in status:
         return "I don't have that profile on file — create it first."
     name = status["client_name"] or "this client"
     pipe = status["pipeline"]["counts"]
+    step = status["current_step"]
     lines = [f"Status for {name}: workflow is on "
-             f"{status['current_step'].replace('_', ' ')}."]
+             f"{step.replace('_', ' ')}."]
+    if step in STEP_MEANING:
+        lines.append(f"What that step is: {STEP_MEANING[step]}.")
     lines.append(f"Applications: {status['pipeline']['total']} saved job(s) — "
                  f"{pipe['saved']} saved, {pipe['applied']} applied, "
                  f"{pipe['interviewing']} interviewing, {pipe['offer']} offer(s), "
@@ -540,13 +576,16 @@ def status_summary_text(status: dict) -> str:
     if due:
         lines.append(f"Follow-ups due ({len(due)}): " +
                      "; ".join(f"{d['title']} at {d['company']} ({d['status']})" for d in due) +
-                     ". I have a draft note ready for each.")
+                     ". I have a draft note ready for each — a short, polite "
+                     "nudge matters: applications that go quiet are the ones that die.")
     else:
-        lines.append("No follow-ups due right now.")
+        lines.append("No follow-ups due right now — nothing has sat quiet long enough to need a nudge.")
     res = status["resources"]
     lines.append(f"Resources: {res['document_count']} document(s), "
                  f"{res['healthy_count']} healthy in RAG, "
-                 f"{res['interview_notes_in_rag']} interview note(s) in RAG.")
+                 f"{res['interview_notes_in_rag']} interview note(s) in RAG. "
+                 f"These are what I answer from — your questions are matched "
+                 f"against this material, never against another client's.")
     integ = status.get("integrity") or {}
     if integ and not integ.get("passed", True):
         # A failed integrity check is reported, never silently passed.
@@ -555,4 +594,6 @@ def status_summary_text(status: dict) -> str:
         lines.append("Workflow integrity check: passed.")
     for run in status["last_runs"][:3]:
         lines.append(f"Last {run['agent']} run ({run.get('ran_at', '')[:16]}): {run.get('summary', '')}")
+    lines.append(f"Next best step: {_next_step(status)}")
+    lines.append("Ask me 'explain my workflow' anytime and I'll walk the whole thing, step by step.")
     return "\n".join(lines)

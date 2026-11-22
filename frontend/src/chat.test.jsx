@@ -100,7 +100,7 @@ describe("concierge chat", () => {
   it("shows starter chips, then a real transcript after asking", async () => {
     const { container, root } = await renderApp();
     const chips = [...container.querySelectorAll(".ppws-chip")];
-    expect(chips.length).toBe(3);
+    expect(chips.length).toBe(4);
     chips.find((c) => c.textContent.includes("How are we doing?")).click();
     await vi.waitFor(() => {
       expect(container.querySelector(".ppws-msg-user")?.textContent).toContain("How are we doing?");
@@ -128,7 +128,7 @@ describe("concierge chat", () => {
     clear.click();
     await vi.waitFor(() => {
       expect(container.querySelectorAll(".ppws-msg").length).toBe(0);
-      expect(container.querySelectorAll(".ppws-chip").length).toBe(3);
+      expect(container.querySelectorAll(".ppws-chip").length).toBe(4);
     }, { timeout: 3000 });
     root.unmount();
   });

@@ -145,6 +145,17 @@ the search response with their reasons and shown in the UI under
 Unprovable requirements (years of experience, wish-list skills) are
 not filtered; the apply pack's fit check covers those.
 
+The concierge is **helpful and verbose, for transparency**: it teaches
+the workflow while it works it. "Explain my workflow" (a starter chip,
+or just ask) returns the full six-step walkthrough marked with the
+client's position — ✓ done, → you are here, upcoming — and the next
+move. Status answers are narrated briefings: what the current step
+is, what the pipeline numbers mean, why follow-ups matter, and a
+computed "Next best step". Q&A answers close with a "How I answered"
+line naming exactly what was searched and that nothing was invented.
+Every interview question carries a "Why I ask" line, shown in the
+panel and in chat, so the client always knows what an answer is for.
+
 ## Tests
 ```bash
 .venv/bin/python -m pytest backend/tests/ -q

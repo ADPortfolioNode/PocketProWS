@@ -58,27 +58,38 @@ WORKFLOW_STEPS = ["documents", "interview", "preferences",
 # One question at a time. First question establishes WHO the search is for.
 INTERVIEW_QUESTIONS = [
     {"key": "name", "field": "name",
-     "question": "Hi! I'm your recruiter concierge — friendly help, one question at a time. First, who is our client? What's the full name of the person seeking work? (The client seeks work; the employer hires.)"},
+     "question": "Hi! I'm your recruiter concierge — friendly help, one question at a time. First, who is our client? What's the full name of the person seeking work? (The client seeks work; the employer hires.)",
+     "why": "Everything is filed under the client's name — searches, saved jobs, cover letters and follow-ups all carry it, so we start there."},
     {"key": "current_role", "field": "current_role",
-     "question": "Thanks! What do you do now — your current or most recent role?"},
+     "question": "Thanks! What do you do now — your current or most recent role?",
+     "why": "It frames the whole search — and the cover letters open with where the client is coming from."},
     {"key": "target_roles", "field": "target_roles",
-     "question": "What roles are you targeting? For example: AI Engineer, Web Developer, or AI Developer."},
+     "question": "What roles are you targeting? For example: AI Engineer, Web Developer, or AI Developer.",
+     "why": "These drive the job search itself: I match postings against the roles the client actually wants, not just any opening."},
     {"key": "skills", "field": "skills",
-     "question": "Skills come from your resume — I'll confirm the list it gives me."},
+     "question": "Skills come from your resume — I'll confirm the list it gives me.",
+     "why": "Matching, the disqualifier filter and the apply packs all use exactly the resume's skills — nothing added, nothing guessed."},
     {"key": "work_history", "field": "work_history",
-     "question": "Tell me about your work history — employers, roles, and dates, briefly. One or two sentences per job is fine."},
+     "question": "Tell me about your work history — employers, roles, and dates, briefly. One or two sentences per job is fine.",
+     "why": "Employers ask for it on every application. On file, the apply pack can answer those questions in one pass."},
     {"key": "certifications", "field": "certifications",
-     "question": "Any certifications or courses? For example: IBM AI Engineering, AWS, or a degree course."},
+     "question": "Any certifications or courses? For example: IBM AI Engineering, AWS, or a degree course.",
+     "why": "Postings that require a named certification get omitted when it isn't on file — and the ones held get cited in cover letters."},
     {"key": "education", "field": "education",
-     "question": "What's your education background? (School, degree, year — whatever you have.)"},
+     "question": "What's your education background? (School, degree, year — whatever you have.)",
+     "why": "Same protection as certifications: a posting that requires a degree above the one on file is omitted instead of wasting an application."},
     {"key": "location", "field": "location",
-     "question": "Where are you based, and do you want remote, hybrid, or on-site work?"},
+     "question": "Where are you based, and do you want remote, hybrid, or on-site work?",
+     "why": "Location plus remote preference decide which postings are realistic for this client — and which ones get flagged."},
     {"key": "employment_type", "field": "employment_type",
-     "question": "Full-time, contract, or either?"},
+     "question": "Full-time, contract, or either?",
+     "why": "Full-time, part-time or contract changes which postings fit, and what the application answers say."},
     {"key": "salary", "field": "salary",
-     "question": "What salary or hourly rate are you aiming for? It's fine to say 'not sure yet'."},
+     "question": "What salary or hourly rate are you aiming for? It's fine to say 'not sure yet'.",
+     "why": "Recorded once, then reused in every salary-expectation answer — and never shared anywhere beyond the application itself."},
     {"key": "cover_letter", "field": "cover_letter_highlights",
-     "question": "Last one for now — for cover letters, what should I highlight about you, and what tone do you like? (For example: confident and direct, or warm and friendly.)"},
+     "question": "Last one for now — for cover letters, what should I highlight about you, and what tone do you like? (For example: confident and direct, or warm and friendly.)",
+     "why": "These highlights and this tone are exactly what the apply pack writes the cover letters from."},
 ]
 
 KNOWN_SKILLS = ["python", "fastapi", "flask", "react", "javascript", "typescript",
@@ -448,7 +459,8 @@ def interview_status(profile: dict) -> dict:
                 "summary": interview_summary(profile)}
     q = INTERVIEW_QUESTIONS[step]
     return {"complete": False, "step": step, "total": len(INTERVIEW_QUESTIONS),
-            "next_question": _question_text(profile, q), "question_key": q["key"]}
+            "next_question": _question_text(profile, q), "question_key": q["key"],
+            "why": q.get("why", "")}
 
 
 def interview_summary(profile: dict) -> str:
