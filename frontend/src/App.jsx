@@ -105,6 +105,7 @@ export default function App() {
   const [interviewA, setInterviewA] = useState("");
   const [docs, setDocs] = useState([]);
   const [docMsg, setDocMsg] = useState("");
+  const [viewDoc, setViewDoc] = useState(null);
   const [status, setStatus] = useState(null);
   const [agentMsg, setAgentMsg] = useState("");
   // Step focus: which workflow panel dominates the content area. Null
@@ -326,7 +327,19 @@ export default function App() {
   const deleteDoc = async (doc) => {
     if (!window.confirm(`Delete “${doc.title}”? It will also be removed from this profile's RAG store.`)) return;
     await fetch(`/api/profiles/${activeId}/documents/${doc.id}`, { method: "DELETE" });
+    if (viewDoc?.document?.id === doc.id) setViewDoc(null);
     loadActive(activeId);
+  };
+
+  // Clicking a document views it (Anthony, 2026-11-22): the viewer
+  // shows the text the app extracted plus the digest, with a link to
+  // the original file. Clicking the same document again closes it.
+  const viewDocument = async (doc) => {
+    if (viewDoc?.document?.id === doc.id) { setViewDoc(null); return; }
+    const r = await fetch(`/api/profiles/${activeId}/documents/${doc.id}/view`);
+    const res = await r.json().catch(() => ({}));
+    if (res.document) setViewDoc(res);
+    else setDocMsg(`Could not view “${doc.title}”: ${res.detail || "unknown error"}`);
   };
 
   const markStep = async (step) => {
@@ -654,7 +667,7 @@ export default function App() {
                   <label className="form-label ppws-file-label">Add a document: <input className="form-control" type="file" onChange={uploadDoc} /></label>
                   {docMsg && <p className="ppws-doc-msg">{docMsg}</p>}
                   <ul className="ppws-list ppws-doc-list">{docs.map((d) => (
-                    <li key={d.id}><span className="ppws-doc-text">{d.title} ({d.text_chars} chars digested)
+                    <li key={d.id}><span className="ppws-doc-text"><button type="button" className="ppws-doc-title-btn" onClick={() => viewDocument(d)} title="View this document">{d.title}</button> ({d.text_chars} chars digested)
                       {d.digest?.skills?.length ? ` — skills: ${d.digest.skills.join(", ")}` : ""}</span>
                       <span className="ppws-doc-actions">
                         <button className="btn btn-sm btn-outline-primary" onClick={() => editDoc(d)}>Edit</button>
@@ -663,6 +676,20 @@ export default function App() {
                       </span>
                     </li>))}</ul>
                   {!docs.length && <p>No documents yet for this profile.</p>}
+                  {viewDoc && (
+                    <div className="ppws-doc-view">
+                      <div className="ppws-doc-view-head">
+                        <strong>{viewDoc.document.title}</strong>
+                        <span className="ppws-doc-view-tools">
+                          <a className="btn btn-sm btn-outline-primary" href={`/api/profiles/${activeId}/documents/${viewDoc.document.id}/file`} target="_blank" rel="noreferrer">Open original</a>
+                          <button className="btn btn-sm btn-outline-secondary" onClick={() => setViewDoc(null)}>Close</button>
+                        </span>
+                      </div>
+                      <p className="ppws-doc-view-digest">What the app read from it — skills: {viewDoc.document.digest?.skills?.join(", ") || "none"} · certifications: {viewDoc.document.digest?.certifications?.join("; ") || "none"} · education: {viewDoc.document.digest?.education?.join("; ") || "none"} · email: {viewDoc.document.digest?.email || "—"}</p>
+                      <div className="ppws-doc-view-text">{viewDoc.text || "(no readable text was extracted from this file)"}</div>
+                      {viewDoc.truncated && <p className="ppws-doc-view-digest">Showing the first part of a long document.</p>}
+                    </div>
+                  )}
                 </div>
               </section>
             </div>

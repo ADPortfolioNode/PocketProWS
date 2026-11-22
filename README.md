@@ -110,7 +110,11 @@ contact, certifications or education. A document uploaded before an
 extractor improvement heals itself: a document with an empty stored
 digest is re-digested from its stored file on load, and its
 **Re-digest** button (`POST .../documents/{doc_id}/redigest`) does
-the same on demand — no re-upload needed.
+the same on demand — no re-upload needed. Clicking a document's
+title views it: the extracted text and the digest it produced
+(`GET .../documents/{doc_id}/view`, read-only), plus an **Open
+original** link that serves the stored file inline
+(`GET .../documents/{doc_id}/file`) so a PDF opens in the browser.
 
 The concierge chat is a real conversation: a per-profile transcript
 (`GET`/`DELETE /api/profiles/{id}/chat`, newest 60 messages kept) is
