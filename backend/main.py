@@ -323,6 +323,14 @@ async def document_replace(profile_id: str, doc_id: str, file: UploadFile = File
     return res
 
 
+@app.post("/api/profiles/{profile_id}/documents/{doc_id}/redigest")
+def document_redigest(profile_id: str, doc_id: str):
+    res = profiles_mod.redigest_document(profile_id, doc_id)
+    if "error" in res:
+        raise HTTPException(_err_status(res["error"]), res["error"])
+    return res
+
+
 @app.delete("/api/profiles/{profile_id}/documents/{doc_id}")
 def document_delete(profile_id: str, doc_id: str):
     if not profiles_mod.delete_document(profile_id, doc_id):

@@ -58,7 +58,7 @@ Their connectors report `status: "unavailable"` with the reason, honestly.
 - Active profile / header: `GET /api/profiles/active` (header data, read fresh from the store), `POST /api/profiles/active {"profile_id": ...}`, `DELETE /api/profiles/active`
 - Interview: `GET /api/profiles/{id}/interview`, `POST /api/profiles/{id}/interview/answer`
 - Workflow: `GET /api/profiles/{id}/workflow`, `POST /api/profiles/{id}/workflow {"step": ...}`
-- Documents (Add/Edit/Delete): `GET /api/profiles/{id}/documents`, `POST` (upload), `PATCH /api/profiles/{id}/documents/{doc_id}`, `POST .../{doc_id}/replace`, `DELETE .../{doc_id}`
+- Documents (Add/Edit/Delete): `GET /api/profiles/{id}/documents`, `POST` (upload), `PATCH /api/profiles/{id}/documents/{doc_id}`, `POST .../{doc_id}/replace`, `POST .../{doc_id}/redigest`, `DELETE .../{doc_id}`
 - `GET /api/profiles/{id}/saved-jobs`
 
 ## Profiles — one person (one client) per profile (2026-11-07)
@@ -101,6 +101,14 @@ client's skills are always the skills used or referenced in the resume
 interview's skills question only confirms that list, and the page
 focuses the current step's panel full-width while the other steps
 minimize to slim bars.
+
+Certificates are identified too: PDF text is decoded through each
+font's ToUnicode map, so generated certificates (Coursera-style)
+digest to their course title as a certification plus the skills they
+name, and a document counts as digested when it yields any of skills,
+contact, certifications or education. A document uploaded before an
+extractor improvement can be repaired in place with its **Re-digest**
+button (`POST .../documents/{doc_id}/redigest`) — no re-upload needed.
 
 ## Tests
 ```bash
