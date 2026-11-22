@@ -139,6 +139,40 @@ def _docs_dir(profile_id: str) -> Path:
     return d
 
 
+def _digest_empty(digest) -> bool:
+    d = digest or {}
+    return not (d.get("skills") or d.get("email")
+                or d.get("certifications") or d.get("education"))
+
+
+def _repair_empty_digests(profiles: dict) -> bool:
+    """Self-repair: a document whose stored digest is empty (uploaded
+    under an older, weaker extractor — the certificate case) is
+    re-digested from its stored file and re-indexed, so an extractor
+    improvement heals existing documents on its own. Documents that
+    still yield nothing are left exactly as they are (honestly empty)."""
+    changed = False
+    for p in profiles.values():
+        for doc in p.get("documents") or []:
+            if not _digest_empty(doc.get("digest")):
+                continue
+            stored = sorted(_docs_dir(p["id"]).glob(f"{doc['id']}-*"))
+            if not stored:
+                continue
+            data = stored[0].read_bytes()
+            text = extract_text(data, doc["filename"])
+            digest = digest_text(text)
+            if _digest_empty(digest) and len(text) == (doc.get("text_chars") or 0):
+                continue  # nothing new to heal
+            doc.update({"size": len(data), "text_chars": len(text),
+                        "digest": digest})
+            _merge_digest(p, digest)
+            vs.delete_profile_doc_chunks(p["id"], doc["id"])
+            vs.upsert_profile_chunks(p["id"], doc["id"], text)
+            changed = True
+    return changed
+
+
 def _load() -> dict:
     f = _profiles_file()
     if not f.exists():
@@ -151,7 +185,11 @@ def _load() -> dict:
     # hand-edited file) must not break profile creation forever: callers
     # assume a dict (.get / [pid] = ...), so anything else reads as empty
     # and the next save rewrites a clean store.
-    return data if isinstance(data, dict) else {}
+    if not isinstance(data, dict):
+        return {}
+    if _repair_empty_digests(data):
+        _save(data)
+    return data
 
 
 def _save(profiles: dict) -> None:

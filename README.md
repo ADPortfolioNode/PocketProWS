@@ -107,8 +107,10 @@ font's ToUnicode map, so generated certificates (Coursera-style)
 digest to their course title as a certification plus the skills they
 name, and a document counts as digested when it yields any of skills,
 contact, certifications or education. A document uploaded before an
-extractor improvement can be repaired in place with its **Re-digest**
-button (`POST .../documents/{doc_id}/redigest`) — no re-upload needed.
+extractor improvement heals itself: a document with an empty stored
+digest is re-digested from its stored file on load, and its
+**Re-digest** button (`POST .../documents/{doc_id}/redigest`) does
+the same on demand — no re-upload needed.
 
 ## Tests
 ```bash
