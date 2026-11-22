@@ -42,6 +42,7 @@ Single process only, like the rest of PocketProWS.
 """
 import json
 import re
+import sys
 import uuid
 import zipfile
 import zlib
@@ -156,20 +157,26 @@ def _repair_empty_digests(profiles: dict) -> bool:
         for doc in p.get("documents") or []:
             if not _digest_empty(doc.get("digest")):
                 continue
-            stored = sorted(_docs_dir(p["id"]).glob(f"{doc['id']}-*"))
-            if not stored:
-                continue
-            data = stored[0].read_bytes()
-            text = extract_text(data, doc["filename"])
-            digest = digest_text(text)
-            if _digest_empty(digest) and len(text) == (doc.get("text_chars") or 0):
-                continue  # nothing new to heal
-            doc.update({"size": len(data), "text_chars": len(text),
-                        "digest": digest})
-            _merge_digest(p, digest)
-            vs.delete_profile_doc_chunks(p["id"], doc["id"])
-            vs.upsert_profile_chunks(p["id"], doc["id"], text)
-            changed = True
+            try:
+                stored = sorted(_docs_dir(p["id"]).glob(f"{doc['id']}-*"))
+                if not stored:
+                    continue
+                data = stored[0].read_bytes()
+                text = extract_text(data, doc["filename"])
+                digest = digest_text(text)
+                if _digest_empty(digest) and len(text) == (doc.get("text_chars") or 0):
+                    continue  # nothing new to heal
+                doc.update({"size": len(data), "text_chars": len(text),
+                            "digest": digest})
+                _merge_digest(p, digest)
+                vs.delete_profile_doc_chunks(p["id"], doc["id"])
+                vs.upsert_profile_chunks(p["id"], doc["id"], text)
+                changed = True
+            except Exception as exc:  # noqa: BLE001 - healing must never
+                # break profile loading: one unreadable document leaves
+                # its stored digest untouched and the rest still load.
+                print(f"[repair] could not re-digest {doc.get('id')}: "
+                      f"{type(exc).__name__}: {exc}", file=sys.stderr)
     return changed
 
 
@@ -187,8 +194,13 @@ def _load() -> dict:
     # and the next save rewrites a clean store.
     if not isinstance(data, dict):
         return {}
-    if _repair_empty_digests(data):
-        _save(data)
+    try:
+        if _repair_empty_digests(data):
+            _save(data)
+    except Exception as exc:  # noqa: BLE001 - a failed repair/save must
+        # never take profile loading (and every profile endpoint) down.
+        print(f"[repair] digest self-repair skipped: "
+              f"{type(exc).__name__}: {exc}", file=sys.stderr)
     return data
 
 
@@ -536,7 +548,7 @@ def _parse_tounicode(cmap: bytes) -> dict:
     mapping = {}
 
     def _dst(hexs: str) -> str:
-        raw = bytes.fromhex(hexs)
+        raw = bytes.fromhex(hexs + ("0" if len(hexs) % 2 else ""))
         if len(raw) >= 2 and len(raw) % 2 == 0:
             try:
                 return raw.decode("utf-16-be")
@@ -554,7 +566,9 @@ def _parse_tounicode(cmap: bytes) -> dict:
             if len(base) == 1:
                 lo_i = int(lo, 16)
                 for code in range(lo_i, int(hi, 16) + 1):
-                    mapping[code] = chr(ord(base) + code - lo_i)
+                    cp = ord(base) + code - lo_i
+                    if 0 <= cp <= 0x10FFFF:
+                        mapping[code] = chr(cp)
         for lo, arr in re.findall(
                 r"<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*\[([^\]]*)\]", block):
             for i, dst in enumerate(re.findall(r"<([0-9A-Fa-f]+)>", arr)):
@@ -648,6 +662,15 @@ def _decode_pdf_bytes(raw: bytes, cmap) -> str:
     return raw.decode("latin-1", errors="replace")
 
 
+def _hex_bytes(hexs: bytes) -> bytes:
+    """PDF hex strings may have an odd number of digits (the last nibble
+    is padded with 0) — bytes.fromhex alone would raise on those."""
+    s = hexs.decode("latin-1").strip()
+    if len(s) % 2:
+        s += "0"
+    return bytes.fromhex(s)
+
+
 def _tj_array_text(arr: bytes, cmap) -> str:
     parts = []
     for m in re.finditer(rb"\((?:\\.|[^()\\])*\)|<([0-9A-Fa-f\s]+)>|(-?\d+(?:\.\d+)?)", arr):
@@ -655,7 +678,7 @@ def _tj_array_text(arr: bytes, cmap) -> str:
         if tok.startswith(b"("):
             parts.append(_decode_pdf_bytes(_unescape_literal(tok[1:-1]), cmap))
         elif tok.startswith(b"<"):
-            parts.append(_decode_pdf_bytes(bytes.fromhex(m.group(1).decode("latin-1")), cmap))
+            parts.append(_decode_pdf_bytes(_hex_bytes(m.group(1)), cmap))
         elif m.group(2) is not None and float(m.group(2)) < -150:
             parts.append(" ")  # a large negative kern is a word gap
     return "".join(parts)
@@ -684,7 +707,7 @@ def _pdf_content_text(content: bytes, font_maps: dict) -> str:
         elif m.group("hex") is not None:
             if m.group("hop") in (b"'", b'"'):
                 out.append("\n")
-            out.append(_decode_pdf_bytes(bytes.fromhex(m.group("hex").decode("latin-1")), cmap))
+            out.append(_decode_pdf_bytes(_hex_bytes(m.group("hex")), cmap))
         elif m.group("arr") is not None:
             out.append(_tj_array_text(m.group("arr"), cmap))
         elif m.group("tdy") is not None:

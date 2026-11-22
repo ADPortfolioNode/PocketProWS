@@ -139,6 +139,51 @@ def test_prefix_upload_self_repairs_on_load():
     assert healed["text_chars"] < 1000  # real text now, not 55K of garbage
 
 
+def test_one_poison_document_cannot_break_profile_loading(monkeypatch):
+    """The self-repair runs inside profile loading, so a document whose
+    re-digest throws (a malformed cert from another issuer) must never
+    take the profiles endpoints down with it — it is skipped, logged,
+    and left with its stored digest."""
+    from backend import profiles as profiles_mod
+    p = client.post("/api/profiles", json={"name": "Anthony Dickerson"}).json()
+    up = client.post(f"/api/profiles/{p['id']}/documents",
+                     files={"file": ("cert.pdf", coursera_style_pdf())}).json()
+    doc_id = up["document"]["id"]
+    store = profiles_mod._load()
+    doc = next(d for d in store[p["id"]]["documents"] if d["id"] == doc_id)
+    doc["digest"] = {"skills": [], "certifications": [], "education": [],
+                     "email": "", "phone": "", "summary": ""}
+    profiles_mod._save(store)
+
+    def boom(data, filename):
+        raise ValueError("Odd-length string")
+
+    monkeypatch.setattr(profiles_mod, "extract_text", boom)
+    r = client.get("/api/profiles")
+    assert r.status_code == 200
+    r2 = client.post("/api/profiles", json={"name": "Second Client"})
+    assert r2.status_code == 200
+    got = client.get(f"/api/profiles/{p['id']}")
+    assert got.status_code == 200
+    still = next(d for d in got.json()["documents"] if d["id"] == doc_id)
+    assert still["digest"]["skills"] == []  # untouched, honestly empty
+
+
+def test_odd_length_hex_string_does_not_raise():
+    # "Hello" with an odd digit count — legal PDF, must not raise.
+    content = b"BT /F1 12 Tf <48656C6C6F7> Tj ET"
+    pdf = _pdf([
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+        b"/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+        _stream(content),
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ])
+    text = extract_text(pdf, "odd.pdf")
+    assert "Hello" in text
+
+
 def test_utf16be_hex_string_pdf_extracts():
     def hex16(s):
         return ("<FEFF" + s.encode("utf-16-be").hex().upper() + ">").encode()
