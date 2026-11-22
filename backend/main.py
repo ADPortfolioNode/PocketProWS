@@ -33,6 +33,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import profiles as profiles_mod
 from . import agents as agents_mod
+from . import llm as llm_mod
 from .chat import answer as concierge_answer
 from .connectors.adzuna import AdzunaConnector
 from .connectors.arbeitnow import ArbeitnowConnector
@@ -413,9 +414,16 @@ def saved_jobs(profile_id: str):
     return {"profile_id": profile_id, "saved_jobs": p["saved_jobs"]}
 
 
+@app.get("/api/llm/status")
+def llm_status():
+    return llm_mod.status()
+
+
 @app.get("/api/profiles/{profile_id}/chat")
 def chat_history(profile_id: str):
-    messages = profiles_mod.get_chat(profile_id)
+    # Opening a conversation greets first (the concierge speaks first
+    # in an empty transcript — see profiles.ensure_greeting).
+    messages = profiles_mod.ensure_greeting(profile_id)
     if messages is None:
         raise HTTPException(404, "profile not found")
     return {"profile_id": profile_id, "messages": messages}
