@@ -47,9 +47,14 @@ def test_chat_history_is_recorded_and_served():
     got = client.get(f"/api/profiles/{p['id']}/chat")
     assert got.status_code == 200
     assert len(got.json()["messages"]) == 4
-    # Another profile's conversation is separate.
+    # Another profile's conversation is separate — and since
+    # 2026-11-22 an untouched conversation holds exactly the
+    # concierge's greeting (he speaks first), nothing of this one's.
     other = _profile()
-    assert client.get(f"/api/profiles/{other['id']}/chat").json()["messages"] == []
+    other_msgs = client.get(f"/api/profiles/{other['id']}/chat").json()["messages"]
+    assert len(other_msgs) == 1
+    assert other_msgs[0]["role"] == "assistant"
+    assert "your concierge" in other_msgs[0]["text"]
 
 
 def test_chat_history_clear_and_cap():
@@ -63,7 +68,11 @@ def test_chat_history_clear_and_cap():
     assert got[0]["text"] != "question 0"  # the oldest were trimmed
     r = client.delete(f"/api/profiles/{p['id']}/chat")
     assert r.status_code == 200
-    assert client.get(f"/api/profiles/{p['id']}/chat").json()["messages"] == []
+    # Cleared means the recorded turns are gone; opening the empty
+    # conversation again greets fresh (2026-11-22) — one greeting,
+    # none of the cleared questions.
+    after = client.get(f"/api/profiles/{p['id']}/chat").json()["messages"]
+    assert len(after) == 1 and "your concierge" in after[0]["text"]
     assert client.get("/api/profiles/nope/chat").status_code == 404
 
 
@@ -71,7 +80,10 @@ def test_interview_turns_are_not_recorded_in_chat():
     p = _profile()
     client.post("/api/chat", json={"message": "Anthony Dickerson",
                                    "profile_id": p["id"], "mode": "interview"})
-    assert client.get(f"/api/profiles/{p['id']}/chat").json()["messages"] == []
+    # The interview turn itself is not recorded — the only message in
+    # the conversation is the concierge's opening greeting (2026-11-22).
+    msgs = client.get(f"/api/profiles/{p['id']}/chat").json()["messages"]
+    assert len(msgs) == 1 and "your concierge" in msgs[0]["text"]
 
 
 def test_followup_query_uses_previous_question():

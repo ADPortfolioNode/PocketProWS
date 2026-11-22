@@ -125,6 +125,17 @@ together with the previous question, and status questions ("How are
 we doing?") are part of the same transcript. Interview turns keep
 their own guided panel and are not recorded as chat.
 
+The concierge greets first: an empty conversation opens with his
+greeting — who he is, where this client stands in the workflow, and
+a question to answer (seeded once per empty transcript; clearing the
+chat greets again). His avatar — an amber lens beside the panel
+title — breathes at rest and brightens while he is thinking. And
+the chat has an LM layer: with a key in `.env` (`GEMINI_API_KEY`,
+then `GROQ_API_KEY`; see `GET /api/llm/status`), Q&A answers are
+composed by the LM from the retrieved passages and saved jobs only,
+and the "How I answered" line names the provider; when no rung
+answers, the answer falls back to the quoted material and says why.
+
 Each saved job has an **Apply pack** (`POST .../saved-jobs/{id}/apply-pack`):
 a fit check (the posting's named skills matched against the resume's,
 never invented), a cover letter, and draft answers to the standard

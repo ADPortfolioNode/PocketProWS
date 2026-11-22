@@ -291,6 +291,48 @@ def clear_chat(profile_id: str) -> bool:
     return True
 
 
+# The concierge greets first (Anthony, 2026-11-22): an empty
+# conversation opens with his greeting — who he is, where this client
+# stands in the workflow, and a question he expects an answer to.
+_GREETING_NEXT = {
+    "documents": "It all starts with the resume — shall we add it under Documents now?",
+    "interview": "Shall we pick up the interview — a few short questions, one at a time, each one saying why I'm asking?",
+    "preferences": "Shall we run the first job search with those preferences and see what fits?",
+    "job_search": "Shall we run a fresh job search across the six boards and see what fits?",
+    "applications": "Shall we review the saved jobs and build an apply pack for the strongest one?",
+    "follow_up": "Shall we check which applications have gone quiet and draft their follow-ups?",
+}
+
+
+def greeting_text(profile) -> str:
+    client = profile.get("client") or {}
+    name = client.get("name") or "your client"
+    ws = workflow_state(profile)
+    steps = ws["steps"]
+    current = ws["current_step"]
+    idx = [s["step"] for s in steps].index(current) + 1
+    done_count = sum(1 for s in steps if s["done"])
+    position = f"We're at step {idx} of {len(steps)}: {current.replace('_', ' ')}."
+    if done_count:
+        position += f" {done_count} step{'s' if done_count != 1 else ''} already behind us."
+    ask = _GREETING_NEXT.get(current, "Where would you like to start?")
+    return (f"Hello — I'm your concierge, working for {name}. {position} "
+            f"Ask me 'how are we doing' anytime for a full briefing, or "
+            f"'explain my workflow' for the whole map. {ask}")
+
+
+def ensure_greeting(profile_id: str):
+    """Seed the greeting into an empty conversation — once; a cleared
+    conversation greets again on next open. Returns the history, or
+    None when the profile does not exist."""
+    p = get_profile(profile_id)
+    if not p:
+        return None
+    if p.get("chat"):
+        return p["chat"]
+    return append_chat(profile_id, "assistant", greeting_text(p))
+
+
 def list_profiles() -> list:
     return list(_load().values())
 

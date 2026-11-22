@@ -4,7 +4,12 @@ Terminology (Anthony, 2026-11-07): the CLIENT is the job seeker — the
 client seeks work; the EMPLOYER is the company posting the job — the
 employer hires. Job results always name the employer as the hiring side.
 
-Keyless retrieved-text fallback (PocketPro pattern). Two modes:
+Retrieved-text at the core, with an LM layer on top (Anthony,
+2026-11-22): when an LM rung is configured (backend/llm.py — Gemini
+first), Q&A answers are composed by the LM from the retrieved
+material only; when no rung answers, the answer falls back to the
+quoted material and says why. The concierge also greets first in an
+empty conversation (profiles.ensure_greeting). Two modes:
 - "interview": one question at a time; each answer is saved into that
   profile's resource and confirmed briefly. The interview establishes WHO
   the client is first (name), before any job preferences.
@@ -23,6 +28,7 @@ was searched; and every interview question carries why it is asked.
 """
 import re
 
+from . import llm as llm_mod
 from . import profiles as profiles_mod
 from .vector_store import search_jobs_text, search_profile_text
 
@@ -190,6 +196,13 @@ def _answer_once(q: str, profile_id: str = "", mode: str = "", history=None) -> 
             client_bits = search_profile_text(profile_id, effective, n=5)
     if not found and not client_bits:
         hint = (f" for {who}" if who else "")
+        if llm_mod.status()["providers"]:
+            lm_note = ("An LM is configured, but it composes only from saved material "
+                       "too — with nothing saved on this topic, there is nothing "
+                       "to compose from.")
+        else:
+            lm_note = ("No LLM key is configured, so I'm answering from saved "
+                       "material only — nothing is invented.")
         return {
             "answer": ("I don't have any saved jobs or client notes matching that yet"
                        f"{hint}. Here's how this works: I can only answer from material "
@@ -197,10 +210,26 @@ def _answer_once(q: str, profile_id: str = "", mode: str = "", history=None) -> 
                        "Documents, the interview answers, and jobs a search has saved. "
                        "Run a job search first (Adzuna, Jooble, USAJOBS, Remotive, RemoteOK "
                        "or Arbeitnow), or add a document / answer an interview question, and "
-                       "I'll match against it. No LLM key is configured, so I'm answering "
-                       "from saved material only — nothing is invented."),
+                       f"I'll match against it. {lm_note}"),
             "jobs": [], "mode": "fallback",
         }
+    searched = []
+    if profile_id:
+        searched.append(f"{len(client_bits)} passage(s) from {who}'s documents and interview notes")
+    searched.append(f"{len(found)} saved job(s)")
+    searched_str = " and ".join(searched)
+    # The LM layer (Anthony, 2026-11-22): when a rung is configured it
+    # composes the answer from the retrieved material — grounded in
+    # it, nothing beyond it. When no rung answers, the answer falls
+    # back to the quoted material, and says why.
+    gen = llm_mod.generate(_qa_prompt(q, who, client_bits, found))
+    if gen["text"]:
+        how = (f"How I answered: {gen['provider']} composed this from {searched_str} "
+               f"for '{effective}' — grounded only in that saved material, nothing "
+               "beyond it. Ask 'explain my workflow' anytime for the full picture.")
+        return {"answer": gen["text"] + "\n\n" + how,
+                "jobs": found, "mode": "llm", "provider": gen["provider"],
+                "client_notes": client_bits}
     lines = []
     if client_bits:
         lines.append(f"From client {who}'s own notes and documents:")
@@ -210,14 +239,38 @@ def _answer_once(q: str, profile_id: str = "", mode: str = "", history=None) -> 
         lines += [f"- {j.get('title','')} — employer {j.get('company','')} ({j.get('location','')}) — {j.get('url','')}"
                   for j in found]
     who_line = f" for client {who}" if who else ""
-    searched = []
-    if profile_id:
-        searched.append(f"{len(client_bits)} passage(s) from {who}'s documents and interview notes")
-    searched.append(f"{len(found)} saved job(s)")
+    configured = llm_mod.status()["providers"]
+    if configured:
+        first_err = next(iter(gen["errors"].values()), "unavailable")
+        how = (f"How I answered: I searched {searched_str} for '{effective}'. "
+               f"The LM ({', '.join(configured)}) didn't answer just now — "
+               f"{first_err} — so this is the saved material itself, quoted — "
+               "nothing added. Ask 'explain my workflow' anytime for the full picture.")
+    else:
+        how = (f"How I answered: I searched {searched_str} for '{effective}'. "
+               "No LLM key is configured, so this is the saved material itself, quoted — "
+               "nothing added. Ask 'explain my workflow' anytime for the full picture.")
     lines.append("")
-    lines.append(f"How I answered: I searched {' and '.join(searched)} for '{effective}'. "
-                 "No LLM key is configured, so this is the saved material itself, quoted — "
-                 "nothing added. Ask 'explain my workflow' anytime for the full picture.")
+    lines.append(how)
     return {"answer": f"Here's what I found{who_line} for '{q}':\n" + "\n".join(lines),
             "jobs": found, "mode": "fallback",
             "client_notes": client_bits}
+
+
+def _qa_prompt(q: str, who: str, client_bits, found) -> str:
+    """Facts-only composition prompt: the LM writes the answer from
+    the retrieved passages and saved jobs, and from nothing else."""
+    notes = "\n".join(f"- {b['text'][:600]}" for b in client_bits) or "(none)"
+    jobs = "\n".join(
+        f"- {j.get('title','')} — employer {j.get('company','')} ({j.get('location','')}) — {j.get('url','')}"
+        for j in found) or "(none)"
+    return (
+        "You are the PocketProWS concierge recruiter. Answer the user's "
+        "question using ONLY the saved material below — the client's own "
+        "documents and notes, and their saved jobs. Do not invent employers, "
+        "salaries, dates or facts that are not in the material. If the "
+        "material only partly answers, say what it covers and what it does "
+        "not. Be helpful, warm and clear. The client is the job seeker; the "
+        "employer is the company hiring.\n\n"
+        f"Question: {q}\n\nClient ({who or 'no profile selected'}):\n{notes}\n\n"
+        f"Saved jobs:\n{jobs}")

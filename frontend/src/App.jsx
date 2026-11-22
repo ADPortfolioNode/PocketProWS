@@ -595,7 +595,10 @@ export default function App() {
               <div className="card-body">
                 <div className="row g-3">
                   <div className="col-12 col-md-8">
-                    <h2 className="ppws-card-title">Concierge recruiter</h2>
+                    <div className="ppws-concierge-head">
+                      <div className={`ppws-avatar${chatBusy ? " is-thinking" : ""}`} aria-hidden="true"><span className="ppws-avatar-lens" /></div>
+                      <h2 className="ppws-card-title">Concierge recruiter</h2>
+                    </div>
                     <p>Hi! I&rsquo;m your friendly recruiter concierge. The resume comes first — add it under Documents and I pull the skills from it — then I ask who our client is (the client seeks work, the employer hires) and go one question at a time. Each answer is saved into that profile&rsquo;s resource, and I tell you what I saved. Every question says why I&rsquo;m asking it, and in the chat below you can ask me &ldquo;explain my workflow&rdquo; anytime — I&rsquo;ll walk the whole process and show exactly where this client stands in it.</p>
                     {activeId && interview && !interview.complete && (
                       <div className="ppws-interview">
