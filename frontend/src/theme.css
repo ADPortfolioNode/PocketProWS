@@ -750,7 +750,10 @@ body {
   .ppws-min-blurb { display: none; }
   .ppws-min-title { white-space: normal; }
 }
-.ppws-howto.is-compact .ppws-step-media,
+/* Compact keeps the photos (Anthony, 2026-11-22: "bring images
+   back") — shorter banners instead of full cards; only the guide
+   text and CTA collapse away. */
+.ppws-howto.is-compact .ppws-step-media { aspect-ratio: 16 / 5; }
 .ppws-howto.is-compact .ppws-step-guide,
 .ppws-howto.is-compact .ppws-step-cta { display: none; }
 .ppws-howto.is-compact .ppws-step-card .card-body { padding: 0.8rem 1rem; }
