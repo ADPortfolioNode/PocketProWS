@@ -132,6 +132,19 @@ facts, and the pack names its provider. Preparation only: the client
 reviews, opens the posting, and submits themselves — nothing is ever
 sent automatically.
 
+Profile-scoped searches run a **disqualifier filter**
+(`backend/disqualify.py`): a job is omitted only when its own stated
+requirements provably fail against the client's record — a degree
+level above the highest on file (softened wording like "preferred"
+or "or equivalent" never omits), a named certification the client
+does not hold (requirement language required; a stack mention is a
+topic, not a gate), a generic certification requirement with none on
+file, or a required security clearance. Omitted jobs are reported in
+the search response with their reasons and shown in the UI under
+"Show what was omitted" — never silently dropped, never saved.
+Unprovable requirements (years of experience, wish-list skills) are
+not filtered; the apply pack's fit check covers those.
+
 ## Tests
 ```bash
 .venv/bin/python -m pytest backend/tests/ -q
