@@ -607,3 +607,39 @@ body {
     transform: none !important;
   }
 }
+
+/* Step focus (2026-11-21): the current workflow step's panel dominates
+   the content area; the other steps minimize to slim bars, and the
+   "How it works" cards compact once a client is active. */
+.ppws-panel-focus {
+  border: 2px solid var(--ppws-accent);
+  box-shadow: var(--ppws-shadow-lift);
+}
+.ppws-panel-min .card-body {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.7rem 1.1rem;
+}
+.ppws-min-title {
+  margin: 0;
+  font-size: 1.05rem;
+  white-space: nowrap;
+}
+.ppws-min-blurb {
+  margin: 0;
+  color: var(--ppws-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 767.98px) {
+  .ppws-min-blurb { display: none; }
+  .ppws-min-title { white-space: normal; }
+}
+.ppws-howto.is-compact .ppws-step-media,
+.ppws-howto.is-compact .ppws-step-guide,
+.ppws-howto.is-compact .ppws-step-cta { display: none; }
+.ppws-howto.is-compact .ppws-step-card .card-body { padding: 0.8rem 1rem; }
+.ppws-howto.is-compact .ppws-section-head { margin-bottom: 1rem; }
+.ppws-howto.is-compact .ppws-section-sub { display: none; }

@@ -182,7 +182,7 @@ def test_status_endpoint_reports_real_numbers():
     assert st["pipeline"]["total"] == 2
     assert st["resources"]["document_count"] == 0
     assert any(r["agent"] == "search" for r in st["last_runs"])
-    assert st["current_step"] == "interview"  # interview not done yet — first undone step
+    assert st["current_step"] == "documents"  # resume first — first undone step
 
 
 def test_agents_run_endpoint_records_runs():

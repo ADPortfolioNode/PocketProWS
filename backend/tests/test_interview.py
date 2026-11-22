@@ -50,10 +50,13 @@ def test_full_interview_completes_and_summarises():
     assert "AI Engineer" in last["summary"]
     got = client.get(f"/api/profiles/{p['id']}").json()
     assert got["client"]["target_roles"] == ["AI Engineer", "Web Developer"]
-    assert "Python" in got["client"]["skills"]
+    # Skills are resume-sourced only (2026-11-21): this interview uploaded
+    # no resume, so the typed skills answer must NOT have been adopted.
+    assert got["client"]["skills"] == []
     assert got["client"]["remote_preference"] == "remote"
     assert got["client"]["employment_type"] == "Either"
-    assert got["workflow"]["steps"][0]["done"] is True  # interview step done
+    steps = {s["step"]: s["done"] for s in got["workflow"]["steps"]}
+    assert steps["interview"] is True
 
 
 def test_interview_answers_are_retrievable_per_client():

@@ -26,6 +26,13 @@ Design (profile model, Anthony 2026-11-07):
   extracted (TXT/MD, DOCX via zipfile, PDF best-effort), structured facts
   (skills, certifications, education, email, phone, work years) are pulled
   into the client's profile, and the text is chunked into RAG.
+- RESUME FIRST (Anthony, 2026-11-21): the workflow asks for the resume
+  (documents step) BEFORE the interview, and the client's skills are
+  ALWAYS the skills used or referenced in the resume — the union of the
+  documents' digested skills, recomputed on every add / replace / delete.
+  Nothing else writes the skills list: the interview's skills question
+  only confirms the resume's list, so matching never runs on typed-in
+  skills the resume does not back up.
 
 Storage: profiles.json + documents/ + active_profile.json live under
 CHROMA_PATH (the same data directory as Chroma, so tests that redirect
@@ -44,7 +51,7 @@ from pathlib import Path
 from . import config as cfg
 from . import vector_store as vs
 
-WORKFLOW_STEPS = ["interview", "documents", "preferences",
+WORKFLOW_STEPS = ["documents", "interview", "preferences",
                   "job_search", "applications", "follow_up"]
 
 # One question at a time. First question establishes WHO the search is for.
@@ -56,7 +63,7 @@ INTERVIEW_QUESTIONS = [
     {"key": "target_roles", "field": "target_roles",
      "question": "What roles are you targeting? For example: AI Engineer, Web Developer, or AI Developer."},
     {"key": "skills", "field": "skills",
-     "question": "What are your top skills and technologies? (Python, React, RAG, LangChain — whatever applies.)"},
+     "question": "Skills come from your resume — I'll confirm the list it gives me."},
     {"key": "work_history", "field": "work_history",
      "question": "Tell me about your work history — employers, roles, and dates, briefly. One or two sentences per job is fine."},
     {"key": "certifications", "field": "certifications",
@@ -323,6 +330,28 @@ def mark_workflow_step(profile_id: str, step: str):
 
 
 # ------------------------------------------------------------- interview
+def _skills_question(profile: dict) -> str:
+    """The skills question is built from the resume, live: it names the
+    skills the resume gave us and asks for a confirmation — it never
+    collects a typed list (see RESUME FIRST in the module docstring)."""
+    skills = list(profile["client"].get("skills") or [])
+    if skills:
+        return ("Skills come from your resume, and your resume lists: "
+                + ", ".join(skills)
+                + ". I'll use exactly these for matching — reply 'yes' to "
+                  "confirm them. If a skill is missing, it has to be on the "
+                  "resume: update the file under Documents and I'll pull "
+                  "the new list from there.")
+    return ("Skills come from your resume — but I don't have a resume for "
+            "this client yet. Add it under Documents first (that's step 1), "
+            "then I'll confirm the skills it lists. Skills typed here are "
+            "not used; matching always reads the resume.")
+
+
+def _question_text(profile: dict, q: dict) -> str:
+    return _skills_question(profile) if q["key"] == "skills" else q["question"]
+
+
 def interview_status(profile: dict) -> dict:
     step = profile["interview_step"]
     if step >= len(INTERVIEW_QUESTIONS):
@@ -331,7 +360,7 @@ def interview_status(profile: dict) -> dict:
                 "summary": interview_summary(profile)}
     q = INTERVIEW_QUESTIONS[step]
     return {"complete": False, "step": step, "total": len(INTERVIEW_QUESTIONS),
-            "next_question": q["question"], "question_key": q["key"]}
+            "next_question": _question_text(profile, q), "question_key": q["key"]}
 
 
 def interview_summary(profile: dict) -> str:
@@ -360,8 +389,17 @@ def _parse_answer(qkey: str, answer: str, client_data: dict) -> str:
         client_data["target_roles"] = [s.strip() for s in re.split(r"[,;]", a) if s.strip()]
         return f"Saved target roles: {', '.join(client_data['target_roles'])}."
     if qkey == "skills":
-        client_data["skills"] = [s.strip() for s in re.split(r"[,;]", a) if s.strip()]
-        return f"Saved skills: {', '.join(client_data['skills'])}."
+        # Skills are NEVER written from an interview answer — they come
+        # from the resume only (module docstring, RESUME FIRST). This
+        # answer is a confirmation; the list it confirms is whatever the
+        # documents currently digest to.
+        skills = list(client_data.get("skills") or [])
+        if skills:
+            return ("Confirmed — matching uses exactly the skills from the "
+                    f"resume: {', '.join(skills)}.")
+        return ("Noted — but no resume skills are on file yet. Add the "
+                "resume under Documents and its skills will be pulled from "
+                "there; skills typed here aren't used.")
     if qkey == "work_history":
         client_data["work_history"] = [s.strip() for s in re.split(r"[;\n]", a) if s.strip()]
         return "Saved your work history."
@@ -409,7 +447,7 @@ def answer_interview(profile_id: str, answer: str) -> dict:
     q = INTERVIEW_QUESTIONS[step]
     if not (answer or "").strip():
         return {"error": "answer was empty — nothing was saved",
-                "complete": False, "saved": "", "next_question": q["question"],
+                "complete": False, "saved": "", "next_question": _question_text(p, q),
                 "step": step, "total": len(INTERVIEW_QUESTIONS)}
     saved = _parse_answer(q["key"], answer, p["client"])
     p["interview_answers"][q["key"]] = (answer or "").strip()
@@ -486,21 +524,34 @@ def digest_text(text: str) -> dict:
     return found
 
 
+def _resume_skills(profile: dict) -> list:
+    """The client's skills: exactly the skills used or referenced in
+    their documents — the sorted union of every document's digested
+    skills. Recomputed (never merged with typed-in values) on every
+    document add / replace / delete, so the list can shrink as well as
+    grow and always matches what the resume actually says."""
+    out = set()
+    for d in profile.get("documents") or []:
+        out.update((d.get("digest") or {}).get("skills") or [])
+    return sorted(out)
+
+
 def _merge_digest(profile: dict, digest: dict) -> None:
     p = profile["client"]
     if digest["email"] and not p.get("email"):
         p["email"] = digest["email"]
     if digest["phone"] and not p.get("phone"):
         p["phone"] = digest["phone"]
-    for s in digest["skills"]:
-        if s not in p["skills"]:
-            p["skills"].append(s)
     for c in digest["certifications"]:
         if c not in p["certifications"]:
             p["certifications"].append(c)
     for e in digest["education"]:
         if e not in p["education"]:
             p["education"].append(e)
+    # Skills are resume-sourced only (module docstring, RESUME FIRST):
+    # recompute from all documents rather than unioning with whatever
+    # the client record happened to hold.
+    p["skills"] = _resume_skills(profile)
 
 
 # File types the document pipeline can actually read. Anything else is
@@ -579,6 +630,8 @@ def delete_document(profile_id: str, doc_id: str) -> bool:
     if not doc:
         return False
     p["documents"] = [d for d in p["documents"] if d["id"] != doc_id]
+    # The deleted document's skills leave with it (resume-sourced only).
+    p["client"]["skills"] = _resume_skills(p)
     _save(profiles)
     vs.delete_profile_doc_chunks(profile_id, doc_id)
     for f in _docs_dir(profile_id).glob(f"{doc_id}-*"):
