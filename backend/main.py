@@ -256,6 +256,24 @@ def applications_get(profile_id: str):
             "jobs": [agents_mod._ensure_job_status(dict(j)) for j in p["saved_jobs"]]}
 
 
+@app.post("/api/profiles/{profile_id}/saved-jobs/{job_id}/apply-pack")
+def apply_pack_generate(profile_id: str, job_id: str):
+    from . import apply_pack as pack_mod
+    res = pack_mod.generate_pack(profile_id, job_id)
+    if "error" in res:
+        raise HTTPException(_err_status(res["error"]), res["error"])
+    return res
+
+
+@app.get("/api/profiles/{profile_id}/saved-jobs/{job_id}/apply-pack")
+def apply_pack_get(profile_id: str, job_id: str):
+    from . import apply_pack as pack_mod
+    res = pack_mod.get_pack(profile_id, job_id)
+    if "error" in res:
+        raise HTTPException(_err_status(res["error"]), res["error"])
+    return res
+
+
 @app.patch("/api/profiles/{profile_id}/saved-jobs/{job_id}/status")
 def application_status_set(profile_id: str, job_id: str, payload: dict):
     res = agents_mod.set_application_status(profile_id, job_id,

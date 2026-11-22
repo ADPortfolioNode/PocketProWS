@@ -804,6 +804,9 @@ def digest_text(text: str) -> dict:
             continue
         ll = l.lower()
         if "certif" in ll or "aws certified" in ll or "ibm" in ll and "certificate" in ll:
+            # Store the credential, not its label: "Certifications: X"
+            # reads as "X" everywhere the record is used (letters too).
+            l = re.sub(r"(?i)^(certifications?|certs?)\s*:\s*", "", l)
             found["certifications"].append(l[:160])
         if any(k in ll for k in ("bachelor", "master", "a.a.s", "aas ", "degree", "university", "college")):
             found["education"].append(l[:160])
