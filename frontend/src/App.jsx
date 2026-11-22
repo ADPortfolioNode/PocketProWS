@@ -93,6 +93,7 @@ export default function App() {
   const [query, setQuery] = useState("AI Engineer");
   const [location, setLocation] = useState("Remote");
   const [results, setResults] = useState(null);
+  const [showOmitted, setShowOmitted] = useState(false);
   const [chatQ, setChatQ] = useState("");
   // Concierge conversation: a real transcript, not a single answer.
   // With an active profile it is the server's stored history (one
@@ -689,6 +690,17 @@ export default function App() {
                   </div>
                 </div>
                 {results && <p className="ppws-results-total">{results.total} jobs found across {results.results.length} sources.</p>}
+                {results && results.omitted_count > 0 && (
+                  <div className="ppws-omitted">
+                    <p className="mb-1">{results.omitted_count} job{results.omitted_count === 1 ? "" : "s"} omitted — their stated requirements would disqualify this client.{" "}
+                      <button className="btn btn-sm btn-outline-secondary" onClick={() => setShowOmitted((v) => !v)}>{showOmitted ? "Hide omitted" : "Show what was omitted"}</button></p>
+                    {showOmitted && (
+                      <ul className="ppws-list">{results.omitted.map((o) => (
+                        <li key={o.id}>{o.title} — employer {o.company} · {o.reasons.join("; ")}</li>
+                      ))}</ul>
+                    )}
+                  </div>
+                )}
                 {results && results.results.map((s) => (
                   <div key={s.source} className="ppws-source-block"><h3 className="ppws-source-title">{s.source} — {s.status}{s.count ? ` (${s.count})` : ""}</h3>
                     {s.message && <p>{s.message}</p>}

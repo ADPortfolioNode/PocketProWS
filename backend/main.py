@@ -92,6 +92,23 @@ def jobs_search(q: str = "", location: str = "", limit: int = 10, source: str = 
         results.append({"source": r.source, "status": r.status,
                         "message": r.message, "count": len(r.jobs), "jobs": r.jobs})
         all_jobs.extend(r.jobs)
+    # Disqualifier filter (Anthony, 2026-11-22): with a profile in
+    # play, omit jobs whose STATED requirements the client's record
+    # provably fails (degree level, named certifications, clearance).
+    # Omitted jobs are reported with reasons, never silently dropped,
+    # and never saved to the profile.
+    omitted = []
+    profile = None
+    if profile_id:
+        profile = profiles_mod._load().get(profile_id)
+    if profile and all_jobs:
+        from . import disqualify as dq_mod
+        kept_ids = set()
+        all_jobs, omitted = dq_mod.filter_jobs(profile["client"], all_jobs)
+        kept_ids = {j["id"] for j in all_jobs}
+        for r in results:
+            r["jobs"] = [j for j in r["jobs"] if j["id"] in kept_ids]
+            r["count"] = len(r["jobs"])
     if all_jobs:
         upsert_jobs(all_jobs)
     if profile_id and all_jobs:
@@ -106,7 +123,8 @@ def jobs_search(q: str = "", location: str = "", limit: int = 10, source: str = 
                     p["saved_jobs"].append(j)
             profiles_mod._save(profiles)
     return {"query": q, "location": location, "total": len(all_jobs),
-            "results": results, "profile_id": profile_id}
+            "results": results, "profile_id": profile_id,
+            "omitted": omitted, "omitted_count": len(omitted)}
 
 
 def _err_status(err: str) -> int:
