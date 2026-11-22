@@ -277,8 +277,9 @@ def run_resource_agent(profile_id: str) -> dict:
         problems = []
         if not doc.get("text_chars"):
             problems.append("no text extracted")
-        if not digest.get("skills") and not digest.get("email"):
-            problems.append("nothing digested (no skills or contact found)")
+        if not (digest.get("skills") or digest.get("email")
+                or digest.get("certifications") or digest.get("education")):
+            problems.append("nothing digested (no skills, contact, certifications or education found)")
         if chunks == 0 and doc.get("text_chars"):
             problems.append("missing from RAG store (stale — re-upload to re-index)")
         checked.append({"doc_id": doc["id"], "title": doc.get("title", doc.get("filename", "")),
@@ -416,9 +417,10 @@ def check_resource_integrity(profile: dict) -> dict:
         if not doc.get("text_chars"):
             problems.append(f"document {doc['id']} ({doc.get('title', '')}): "
                             f"no text extracted")
-        if not digest.get("skills") and not digest.get("email"):
+        if not (digest.get("skills") or digest.get("email")
+                or digest.get("certifications") or digest.get("education")):
             problems.append(f"document {doc['id']} ({doc.get('title', '')}): "
-                            f"digest missing (no skills or contact)")
+                            f"digest missing (no skills, contact, certifications or education)")
     indexed = vs.list_profile_chunk_doc_ids(pid)
     # Interview notes are indexed under doc_id "interview-<key>", not a document.
     orphans = sorted(d for d in indexed

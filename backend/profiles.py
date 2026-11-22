@@ -482,15 +482,204 @@ def extract_text(data: bytes, filename: str) -> str:
     return data.decode("utf-8", errors="ignore")
 
 
-def _extract_pdf_text(data: bytes) -> str:
-    """Best-effort PDF text: decompress streams, pull (text) Tj / [...] TJ."""
-    out = []
+def _pdf_stream_bytes(data: bytes):
+    """Yield each stream's bytes, FlateDecode-decoded when possible."""
     for m in re.finditer(rb"stream\r?\n(.*?)endstream", data, re.S):
         raw = m.group(1)
         try:
-            raw = zlib.decompress(raw)
+            yield zlib.decompress(raw)
         except Exception:  # noqa: BLE001 - stream was not compressed
+            yield raw
+
+
+def _parse_tounicode(cmap: bytes) -> dict:
+    """Parse a ToUnicode CMap (bfchar + bfrange) into {cid: text}."""
+    text = cmap.decode("latin-1", errors="ignore")
+    mapping = {}
+
+    def _dst(hexs: str) -> str:
+        raw = bytes.fromhex(hexs)
+        if len(raw) >= 2 and len(raw) % 2 == 0:
+            try:
+                return raw.decode("utf-16-be")
+            except Exception:  # noqa: BLE001
+                pass
+        return raw.decode("latin-1", errors="replace")
+
+    for block in re.findall(r"beginbfchar(.*?)endbfchar", text, re.S):
+        for src, dst in re.findall(r"<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>", block):
+            mapping[int(src, 16)] = _dst(dst)
+    for block in re.findall(r"beginbfrange(.*?)endbfrange", text, re.S):
+        for lo, hi, dst in re.findall(
+                r"<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>", block):
+            base = _dst(dst)
+            if len(base) == 1:
+                lo_i = int(lo, 16)
+                for code in range(lo_i, int(hi, 16) + 1):
+                    mapping[code] = chr(ord(base) + code - lo_i)
+        for lo, arr in re.findall(
+                r"<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*\[([^\]]*)\]", block):
+            for i, dst in enumerate(re.findall(r"<([0-9A-Fa-f]+)>", arr)):
+                mapping[int(lo, 16) + i] = _dst(dst)
+    return mapping
+
+
+def _pdf_font_maps(data: bytes) -> dict:
+    """Map /Fxx resource names to their font's ToUnicode map.
+
+    Generated PDFs (Coursera-style certificates above all) show text as
+    2-byte CIDs under Type0/Identity-H fonts; the bytes are meaningless
+    without the font's ToUnicode CMap. This scans the classic object
+    layout — font objects, their /ToUnicode references, and the /Font
+    resource dictionaries that bind names to fonts.
+    """
+    cmap_by_obj = {}
+    font_unicode = {}
+    font_by_name = {}
+    for m in re.finditer(rb"(\d+)\s+\d+\s+obj\b(.*?)endobj", data, re.S):
+        num, body = int(m.group(1)), m.group(2)
+        sm = re.search(rb"stream\r?\n(.*?)endstream", body, re.S)
+        if sm:
+            raw = sm.group(1)
+            try:
+                dec = zlib.decompress(raw)
+            except Exception:  # noqa: BLE001
+                dec = raw
+            if b"begincmap" in dec or b"beginbf" in dec:
+                cmap_by_obj[num] = _parse_tounicode(dec)
+        tu = re.search(rb"/ToUnicode\s+(\d+)\s+\d+\s+R", body)
+        if tu:
+            font_unicode[num] = int(tu.group(1))
+        fm = re.search(rb"/Font\s*<<(.*?)>>", body, re.S)
+        if fm:
+            for name, ref in re.findall(rb"/(F\w+)\s+(\d+)\s+\d+\s+R", fm.group(1)):
+                font_by_name[name.decode("latin-1")] = int(ref)
+    out = {}
+    for name, fobj in font_by_name.items():
+        cmap = cmap_by_obj.get(font_unicode.get(fobj))
+        if cmap:
+            out[name] = cmap
+    return out
+
+
+def _unescape_literal(raw: bytes) -> bytes:
+    out = bytearray()
+    i = 0
+    while i < len(raw):
+        c = raw[i]
+        if c == 0x5C and i + 1 < len(raw):  # backslash escape
+            nxt = raw[i + 1]
+            simple = {0x6E: 0x0A, 0x72: 0x0D, 0x74: 0x09, 0x62: 0x08,
+                      0x66: 0x0C, 0x28: 0x28, 0x29: 0x29, 0x5C: 0x5C}
+            if nxt in simple:
+                out.append(simple[nxt])
+                i += 2
+                continue
+            if 0x30 <= nxt <= 0x37:  # up to 3 octal digits
+                j = i + 1
+                val = 0
+                while j < len(raw) and j < i + 4 and 0x30 <= raw[j] <= 0x37:
+                    val = val * 8 + (raw[j] - 0x30)
+                    j += 1
+                out.append(val & 0xFF)
+                i = j
+                continue
+            i += 1  # escaped newline / unknown escape: drop the backslash
+            continue
+        out.append(c)
+        i += 1
+    return bytes(out)
+
+
+def _decode_pdf_bytes(raw: bytes, cmap) -> str:
+    """Decode shown-text bytes: through the font's ToUnicode map when the
+    font has one (2-byte CIDs), else UTF-16BE when it looks like it, else
+    latin-1 (simple-font literal text)."""
+    if cmap:
+        return "".join(cmap.get((raw[i] << 8) | raw[i + 1], "")
+                       for i in range(0, len(raw) - 1, 2))
+    if raw[:2] == b"\xfe\xff":
+        return raw[2:].decode("utf-16-be", errors="replace")
+    if len(raw) >= 4 and len(raw) % 2 == 0 and raw[0] == 0 and raw[2] == 0:
+        try:
+            t = raw.decode("utf-16-be")
+            if sum(c.isprintable() or c in "\n\r\t" for c in t) >= 0.9 * len(t):
+                return t
+        except Exception:  # noqa: BLE001
             pass
+    return raw.decode("latin-1", errors="replace")
+
+
+def _tj_array_text(arr: bytes, cmap) -> str:
+    parts = []
+    for m in re.finditer(rb"\((?:\\.|[^()\\])*\)|<([0-9A-Fa-f\s]+)>|(-?\d+(?:\.\d+)?)", arr):
+        tok = m.group(0)
+        if tok.startswith(b"("):
+            parts.append(_decode_pdf_bytes(_unescape_literal(tok[1:-1]), cmap))
+        elif tok.startswith(b"<"):
+            parts.append(_decode_pdf_bytes(bytes.fromhex(m.group(1).decode("latin-1")), cmap))
+        elif m.group(2) is not None and float(m.group(2)) < -150:
+            parts.append(" ")  # a large negative kern is a word gap
+    return "".join(parts)
+
+
+_PDF_TOKEN = re.compile(rb"""
+    /(?P<font>[A-Za-z0-9]+)\s+[\d.]+\s+Tf
+  | \((?P<lit>(?:\\.|[^()\\])*)\)\s*(?P<lop>Tj|'|")
+  | <(?P<hex>[0-9A-Fa-f\s]+)>\s*(?P<hop>Tj|'|")
+  | \[(?P<arr>(?:\\.|[^\\\]])*)\]\s*TJ
+  | (?P<tdx>-?[\d.]+)\s+(?P<tdy>-?[\d.]+)\s+(?:Td|TD)\b
+  | (?P<move>\bT\*|\bTm\b)
+""", re.X)
+
+
+def _pdf_content_text(content: bytes, font_maps: dict) -> str:
+    out = []
+    cmap = None
+    for m in _PDF_TOKEN.finditer(content):
+        if m.group("font"):
+            cmap = font_maps.get(m.group("font").decode("latin-1"))
+        elif m.group("lit") is not None:
+            if m.group("lop") in (b"'", b'"'):
+                out.append("\n")
+            out.append(_decode_pdf_bytes(_unescape_literal(m.group("lit")), cmap))
+        elif m.group("hex") is not None:
+            if m.group("hop") in (b"'", b'"'):
+                out.append("\n")
+            out.append(_decode_pdf_bytes(bytes.fromhex(m.group("hex").decode("latin-1")), cmap))
+        elif m.group("arr") is not None:
+            out.append(_tj_array_text(m.group("arr"), cmap))
+        elif m.group("tdy") is not None:
+            # A Td with no vertical move is a per-glyph advance along the
+            # SAME line (generated certificates position every glyph this
+            # way) — only a vertical move starts a new line.
+            if float(m.group("tdy")) != 0:
+                out.append("\n")
+        elif m.group("move"):
+            out.append("\n")
+    return "".join(out)
+
+
+def _extract_pdf_text(data: bytes) -> str:
+    """Extract a PDF's text the way it is actually encoded: content
+    streams tokenized for Tj/TJ, strings decoded through each font's
+    ToUnicode CMap. (The pre-2026-11-21 scrape — every parenthesized run
+    in every stream, latin-1 — returned image bytes as garbage on real
+    certificates and none of their text.)"""
+    font_maps = _pdf_font_maps(data)
+    parts = []
+    for content in _pdf_stream_bytes(data):
+        if b"Tj" not in content and b"TJ" not in content:
+            continue
+        t = _pdf_content_text(content, font_maps)
+        if t.strip():
+            parts.append(t)
+    text = "\n".join(parts)
+    if text.strip():
+        return text
+    # Last resort for odd files the tokenizer missed: the old scrape.
+    out = []
+    for raw in _pdf_stream_bytes(data):
         for t in re.findall(rb"\((?:[^()\\]|\\.)*\)", raw):
             try:
                 out.append(t[1:-1].decode("latin-1"))
@@ -519,6 +708,31 @@ def digest_text(text: str) -> dict:
             found["certifications"].append(l[:160])
         if any(k in ll for k in ("bachelor", "master", "a.a.s", "aas ", "degree", "university", "college")):
             found["education"].append(l[:160])
+    # Certificate documents: the credential IS the course/program title,
+    # which usually sits near the completion sentence and does not itself
+    # contain the word "certificate" (e.g. "Python for Data Science, AI &
+    # Development" under "has successfully completed"). Take the longest
+    # plausible title line in the window around that sentence, skipping
+    # boilerplate (authorization / verify / identity lines) and names.
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    low_lines = [l.lower() for l in lines]
+    if not found["certifications"] and any(
+            "successfully completed" in l or "certificate of" in l for l in low_lines):
+        boiler = ("successfully completed", "non-credit", "authorized",
+                  "verify", "http", "confirmed the identity", "participation",
+                  "certificate", "instructor", "director")
+        for idx, l in enumerate(low_lines):
+            if "successfully completed" in l or "certificate of" in l:
+                window = lines[max(0, idx - 5): idx + 6]
+                cands = [c for c in window
+                         if 8 <= len(c) <= 120 and len(c.split()) >= 2
+                         and not any(b in c.lower() for b in boiler)
+                         and not re.search(r"\b(19|20)\d{2}\b", c)]
+                if cands:
+                    title = max(cands, key=len)[:160]
+                    if title not in found["certifications"]:
+                        found["certifications"].append(title)
+                break
     found["certifications"] = found["certifications"][:10]
     found["education"] = found["education"][:10]
     return found
@@ -619,6 +833,32 @@ def edit_document(profile_id: str, doc_id: str, patch: dict, data: bytes = None,
         vs.upsert_profile_chunks(profile_id, doc_id, text)
     _save(profiles)
     return {"document": doc}
+
+
+def redigest_document(profile_id: str, doc_id: str) -> dict:
+    """Re-run extraction + digestion on the document's stored file and
+    re-index its chunks — how documents uploaded under an older, weaker
+    extractor (certificates whose text it could not read) get repaired
+    in place, with no re-upload."""
+    profiles = _load()
+    p = profiles.get(profile_id)
+    if not p:
+        return {"error": "profile not found"}
+    doc = next((d for d in p["documents"] if d["id"] == doc_id), None)
+    if not doc:
+        return {"error": "document not found"}
+    stored = sorted(_docs_dir(profile_id).glob(f"{doc_id}-*"))
+    if not stored:
+        return {"error": "the stored file is missing — re-upload the document"}
+    data = stored[0].read_bytes()
+    text = extract_text(data, doc["filename"])
+    digest = digest_text(text)
+    doc.update({"size": len(data), "text_chars": len(text), "digest": digest})
+    _merge_digest(p, digest)
+    _save(profiles)
+    vs.delete_profile_doc_chunks(profile_id, doc_id)
+    vs.upsert_profile_chunks(profile_id, doc_id, text)
+    return {"document": doc, "extracted": digest, "text_chars": len(text)}
 
 
 def delete_document(profile_id: str, doc_id: str) -> bool:

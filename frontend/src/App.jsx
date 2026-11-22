@@ -249,6 +249,18 @@ export default function App() {
     loadActive(activeId);
   };
 
+  const redigestDoc = async (doc) => {
+    const r = await fetch(`/api/profiles/${activeId}/documents/${doc.id}/redigest`, { method: "POST" });
+    const res = await r.json().catch(() => ({}));
+    if (res.document) {
+      const d = res.extracted || {};
+      setDocMsg(`Re-digested “${doc.title}” — found: skills ${d.skills?.join(", ") || "none"}, certifications ${d.certifications?.join("; ") || "none"}, email ${d.email || "—"}.`);
+    } else {
+      setDocMsg(`Re-digest failed: ${res.detail || "unknown error"}`);
+    }
+    loadActive(activeId);
+  };
+
   const deleteDoc = async (doc) => {
     if (!window.confirm(`Delete “${doc.title}”? It will also be removed from this profile's RAG store.`)) return;
     await fetch(`/api/profiles/${activeId}/documents/${doc.id}`, { method: "DELETE" });
@@ -531,6 +543,7 @@ export default function App() {
                       {d.digest?.skills?.length ? ` — skills: ${d.digest.skills.join(", ")}` : ""}</span>
                       <span className="ppws-doc-actions">
                         <button className="btn btn-sm btn-outline-primary" onClick={() => editDoc(d)}>Edit</button>
+                        <button className="btn btn-sm btn-outline-secondary" onClick={() => redigestDoc(d)}>Re-digest</button>
                         <button className="btn btn-sm btn-outline-danger" onClick={() => deleteDoc(d)}>Delete</button>
                       </span>
                     </li>))}</ul>
