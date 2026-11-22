@@ -114,6 +114,31 @@ def test_redigest_repairs_a_document_in_place():
     assert "python" in got["client"]["skills"]
 
 
+def test_prefix_upload_self_repairs_on_load():
+    """A certificate uploaded under the OLD extractor has an empty
+    stored digest. With the fix in place it must heal by itself on the
+    next load — no button, no re-upload — and the integrity check the
+    user actually sees must pass."""
+    from backend import profiles as profiles_mod
+    p = client.post("/api/profiles", json={"name": "Anthony Dickerson"}).json()
+    up = client.post(f"/api/profiles/{p['id']}/documents",
+                     files={"file": ("cert.pdf", coursera_style_pdf())}).json()
+    doc_id = up["document"]["id"]
+    # Simulate the pre-fix stored state: empty digest, garbage char count.
+    store = profiles_mod._load()
+    doc = next(d for d in store[p["id"]]["documents"] if d["id"] == doc_id)
+    doc["digest"] = {"skills": [], "certifications": [], "education": [],
+                     "email": "", "phone": "", "summary": ""}
+    doc["text_chars"] = 55525
+    profiles_mod._save(store)
+    st = client.get(f"/api/profiles/{p['id']}/status").json()
+    assert st["integrity"]["passed"] is True, st["integrity"]["problems"]
+    got = client.get(f"/api/profiles/{p['id']}").json()
+    healed = next(d for d in got["documents"] if d["id"] == doc_id)
+    assert "Python for Data Science" in healed["digest"]["certifications"][0]
+    assert healed["text_chars"] < 1000  # real text now, not 55K of garbage
+
+
 def test_utf16be_hex_string_pdf_extracts():
     def hex16(s):
         return ("<FEFF" + s.encode("utf-16-be").hex().upper() + ">").encode()
