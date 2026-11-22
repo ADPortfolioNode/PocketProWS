@@ -121,6 +121,17 @@ together with the previous question, and status questions ("How are
 we doing?") are part of the same transcript. Interview turns keep
 their own guided panel and are not recorded as chat.
 
+Each saved job has an **Apply pack** (`POST .../saved-jobs/{id}/apply-pack`):
+a fit check (the posting's named skills matched against the resume's,
+never invented), a cover letter, and draft answers to the standard
+application questions — all from the client's own profile. The letter
+is written by the LLM chain when a key is configured
+(`GEMINI_API_KEY`, then `GROQ_API_KEY`, in the local `.env`;
+`backend/llm.py`), otherwise by a built-in template from the same
+facts, and the pack names its provider. Preparation only: the client
+reviews, opens the posting, and submits themselves — nothing is ever
+sent automatically.
+
 ## Tests
 ```bash
 .venv/bin/python -m pytest backend/tests/ -q

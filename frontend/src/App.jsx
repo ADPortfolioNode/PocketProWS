@@ -112,6 +112,11 @@ export default function App() {
   // the focus without touching the workflow state itself.
   const [focusPanel, setFocusPanel] = useState(null);
   const [resourcesOpen, setResourcesOpen] = useState(false);
+  // Apply packs: generated per saved job, expanded inline in the list.
+  const [packs, setPacks] = useState({});
+  const [openPack, setOpenPack] = useState("");
+  const [packBusy, setPackBusy] = useState("");
+  const [copied, setCopied] = useState("");
 
   const loadStatus = async (id) => {
     if (!id) { setStatus(null); return; }
@@ -254,6 +259,25 @@ export default function App() {
   const clearChat = async () => {
     if (activeId) await fetch(`/api/profiles/${activeId}/chat`, { method: "DELETE" }).catch(() => {});
     setChatLog([]);
+  };
+
+  const togglePack = async (j) => {
+    if (openPack === j.id) { setOpenPack(""); return; }
+    setOpenPack(j.id);
+    if (packs[j.id]) return;
+    if (j.apply_pack) { setPacks((m) => ({ ...m, [j.id]: j.apply_pack })); return; }
+    setPackBusy(j.id);
+    try {
+      const r = await fetch(`/api/profiles/${activeId}/saved-jobs/${j.id}/apply-pack`, { method: "POST" });
+      const res = await r.json();
+      if (res.apply_pack) setPacks((m) => ({ ...m, [j.id]: res.apply_pack }));
+    } finally {
+      setPackBusy("");
+    }
+  };
+
+  const copyText = async (label, text) => {
+    try { await navigator.clipboard.writeText(text); setCopied(label); } catch { setCopied(""); }
   };
 
   const search = async () => {
@@ -512,8 +536,32 @@ export default function App() {
                     <div><p><strong>Saved jobs — application status:</strong></p>
                       <ul className="ppws-list ppws-saved-jobs">{status.saved_jobs.map((j) => (
                         <li key={j.id}><span className="ppws-saved-job-text">{j.title} — employer {j.company} · {j.application_status || "saved"}</span>
+                          <button className="btn btn-sm ppws-btn-accent" onClick={() => togglePack(j)}>{openPack === j.id ? "Hide apply pack" : j.apply_pack || packs[j.id] ? "View apply pack" : "Apply pack"}</button>
                           {NEXT_STATUS[j.application_status || "saved"] && <button className="btn btn-sm btn-outline-primary" onClick={() => setJobStatus(j, NEXT_STATUS[j.application_status || "saved"])}>{NEXT_LABEL[j.application_status || "saved"]}</button>}
                           {(j.application_status || "saved") !== "rejected" && (j.application_status || "saved") !== "hired" && <button className="btn btn-sm btn-outline-danger" onClick={() => setJobStatus(j, "rejected")}>Mark rejected</button>}
+                          {openPack === j.id && (
+                            <div className="ppws-pack">
+                              {packBusy === j.id && <p>Building the apply pack…</p>}
+                              {packs[j.id] && (
+                                <>
+                                  <p><strong>Fit:</strong> {packs[j.id].fit.summary}
+                                    {packs[j.id].fit.matched.length > 0 && <> Matched: {packs[j.id].fit.matched.join(", ")}.</>}
+                                    {packs[j.id].fit.missing.length > 0 && <> Not on the resume: {packs[j.id].fit.missing.join(", ")}.</>}</p>
+                                  <p className="ppws-pack-provider">Cover letter written by: {packs[j.id].provider === "template" ? "the built-in template (no LM key configured)" : packs[j.id].provider}</p>
+                                  <div className="ppws-pack-letter" style={{ whiteSpace: "pre-line" }}>{packs[j.id].cover_letter}</div>
+                                  <button className="btn btn-sm btn-outline-primary" onClick={() => copyText(`letter-${j.id}`, packs[j.id].cover_letter)}>{copied === `letter-${j.id}` ? "Copied ✓" : "Copy cover letter"}</button>
+                                  {packs[j.id].answers.map((a, ai) => (
+                                    <div key={ai} className="ppws-pack-answer">
+                                      <p className="mb-1"><strong>{a.question}</strong></p>
+                                      <p className="mb-1">{a.answer}</p>
+                                      <button className="btn btn-sm btn-outline-secondary" onClick={() => copyText(`ans-${j.id}-${ai}`, a.answer)}>{copied === `ans-${j.id}-${ai}` ? "Copied ✓" : "Copy answer"}</button>
+                                    </div>
+                                  ))}
+                                  <p className="ppws-pack-note">{packs[j.id].note} <a href={j.url} target="_blank" rel="noreferrer">Open the posting</a></p>
+                                </>
+                              )}
+                            </div>
+                          )}
                         </li>))}</ul></div>
                   )}
                 </div>
