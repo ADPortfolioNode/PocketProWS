@@ -367,6 +367,37 @@ def document_redigest(profile_id: str, doc_id: str):
     return res
 
 
+@app.get("/api/profiles/{profile_id}/documents/{doc_id}/view")
+def document_view(profile_id: str, doc_id: str):
+    res = profiles_mod.view_document(profile_id, doc_id)
+    if "error" in res:
+        status = 404 if "not found" in res["error"] else _err_status(res["error"])
+        raise HTTPException(status, res["error"])
+    return res
+
+
+_DOC_MEDIA_TYPES = {
+    ".pdf": "application/pdf",
+    ".txt": "text/plain; charset=utf-8",
+    ".md": "text/markdown; charset=utf-8",
+    ".csv": "text/csv; charset=utf-8",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+
+
+@app.get("/api/profiles/{profile_id}/documents/{doc_id}/file")
+def document_file(profile_id: str, doc_id: str):
+    res = profiles_mod.document_file(profile_id, doc_id)
+    if "error" in res:
+        status = 404 if "not found" in res["error"] else _err_status(res["error"])
+        raise HTTPException(status, res["error"])
+    media = _DOC_MEDIA_TYPES.get(res["path"].suffix.lower(),
+                                 "application/octet-stream")
+    return FileResponse(res["path"], media_type=media,
+                        filename=res["filename"],
+                        content_disposition_type="inline")
+
+
 @app.delete("/api/profiles/{profile_id}/documents/{doc_id}")
 def document_delete(profile_id: str, doc_id: str):
     if not profiles_mod.delete_document(profile_id, doc_id):

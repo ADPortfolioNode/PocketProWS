@@ -975,6 +975,49 @@ def redigest_document(profile_id: str, doc_id: str) -> dict:
     return {"document": doc, "extracted": digest, "text_chars": len(text)}
 
 
+VIEW_TEXT_CAP = 100_000
+
+
+def _stored_file(profile_id: str, doc_id: str):
+    stored = sorted(_docs_dir(profile_id).glob(f"{doc_id}-*"))
+    return stored[0] if stored else None
+
+
+def view_document(profile_id: str, doc_id: str) -> dict:
+    """Read-only view of a document (Anthony, 2026-11-22: "clicking a
+    document views a document"). The stored file is re-extracted on
+    demand — nothing is saved, merged or re-indexed — and its text is
+    returned with the digest, so the UI shows exactly what the app
+    read from the file."""
+    p = get_profile(profile_id)
+    if not p:
+        return {"error": "profile not found"}
+    doc = next((d for d in p["documents"] if d["id"] == doc_id), None)
+    if not doc:
+        return {"error": "document not found"}
+    path = _stored_file(profile_id, doc_id)
+    if path is None:
+        return {"error": "the stored file is missing — re-upload the document"}
+    text = extract_text(path.read_bytes(), doc["filename"])
+    return {"document": doc, "text": text[:VIEW_TEXT_CAP],
+            "truncated": len(text) > VIEW_TEXT_CAP,
+            "text_chars": len(text)}
+
+
+def document_file(profile_id: str, doc_id: str) -> dict:
+    """Locate the stored original so it can be served for viewing."""
+    p = get_profile(profile_id)
+    if not p:
+        return {"error": "profile not found"}
+    doc = next((d for d in p["documents"] if d["id"] == doc_id), None)
+    if not doc:
+        return {"error": "document not found"}
+    path = _stored_file(profile_id, doc_id)
+    if path is None:
+        return {"error": "the stored file is missing — re-upload the document"}
+    return {"path": path, "filename": doc["filename"]}
+
+
 def delete_document(profile_id: str, doc_id: str) -> bool:
     profiles = _load()
     p = profiles.get(profile_id)
