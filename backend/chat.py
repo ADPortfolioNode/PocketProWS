@@ -33,8 +33,35 @@ def _is_status_question(q: str) -> bool:
     return any(re.search(rf"\b{re.escape(w)}\b", lower) for w in STATUS_WORDS)
 
 
+def _effective_query(q: str, history) -> str:
+    """Follow-ups lean on the conversation: a short question ("and
+    remote?", "what about Texas?") is searched together with the
+    previous user message, so it matches what the user means instead
+    of matching almost nothing."""
+    words = q.split()
+    if history and (len(words) <= 3 or q.lower().startswith(("and ", "what about"))):
+        prev = [m for m in history if m.get("role") == "user"]
+        if prev:
+            return prev[-1]["text"] + " " + q
+    return q
+
+
 def answer(question: str, profile_id: str = "", mode: str = "") -> dict:
-    q = (question or "").strip()
+    """One concierge turn. With a profile, the turn is recorded in that
+    profile's conversation (the interview flow keeps its own panel and
+    is not recorded), and the response carries the updated history so
+    the UI renders the transcript from one source of truth."""
+    history = profiles_mod.get_chat(profile_id) if profile_id else None
+    res = _answer_once((question or "").strip(), profile_id, mode, history or [])
+    if profile_id and history is not None and mode != "interview" and (question or "").strip():
+        profiles_mod.append_chat(profile_id, "user", (question or "").strip())
+        updated = profiles_mod.append_chat(profile_id, "assistant", res["answer"])
+        if updated is not None:
+            res["history"] = updated
+    return res
+
+
+def _answer_once(q: str, profile_id: str = "", mode: str = "", history=None) -> dict:
     # Status questions go to the workflow agents' live status — real
     # numbers for the active profile, no LLM key needed.
     if profile_id and q and _is_status_question(q):
@@ -71,14 +98,15 @@ def answer(question: str, profile_id: str = "", mode: str = "") -> dict:
     if not q:
         return {"answer": "Ask me about a role, a skill, or a location — for example, 'remote Python jobs'.",
                 "jobs": [], "mode": "fallback"}
-    found = search_jobs_text(q, n=5)
+    effective = _effective_query(q, history or [])
+    found = search_jobs_text(effective, n=5)
     client_bits = []
     who = ""
     if profile_id:
         profile = profiles_mod.get_profile(profile_id)
         if profile:
             who = profile["client"].get("name") or profile_id
-            client_bits = search_profile_text(profile_id, q, n=5)
+            client_bits = search_profile_text(profile_id, effective, n=5)
     if not found and not client_bits:
         hint = (f" for {who}" if who else "")
         return {

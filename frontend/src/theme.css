@@ -436,6 +436,85 @@ body {
   border-radius: 0.8rem;
   line-height: 1.65;
 }
+/* Concierge conversation transcript (2026-11-22) */
+.ppws-chat-log {
+  margin-top: 1rem;
+  max-height: 26rem;
+  overflow-y: auto;
+  padding: 0.9rem;
+  background-color: var(--ppws-bg);
+  border: 1px solid var(--ppws-line);
+  border-radius: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.ppws-msg {
+  max-width: 88%;
+  padding: 0.6rem 0.85rem;
+  border-radius: 0.9rem;
+  line-height: 1.55;
+  font-size: 0.95rem;
+}
+.ppws-msg-bot {
+  align-self: flex-start;
+  background-color: var(--ppws-card);
+  border: 1px solid var(--ppws-line);
+  border-bottom-left-radius: 0.25rem;
+}
+.ppws-msg-user {
+  align-self: flex-end;
+  background-color: var(--ppws-ink);
+  color: #fff;
+  border-bottom-right-radius: 0.25rem;
+}
+.ppws-msg-typing {
+  color: var(--ppws-muted);
+  font-style: italic;
+}
+.ppws-chat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.ppws-chip {
+  border: 1px solid var(--ppws-accent);
+  color: var(--ppws-ink);
+  background: transparent;
+  border-radius: 999px;
+}
+.ppws-chip:hover {
+  background-color: var(--ppws-accent);
+  color: var(--ppws-ink);
+}
+.ppws-msg-jobs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+}
+.ppws-job-mini {
+  display: flex;
+  flex-direction: column;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--ppws-line);
+  border-radius: 0.6rem;
+  background-color: var(--ppws-bg);
+  color: var(--ppws-text);
+  text-decoration: none;
+}
+.ppws-job-mini:hover {
+  border-color: var(--ppws-accent);
+  color: var(--ppws-text);
+}
+.ppws-job-mini span {
+  color: var(--ppws-muted);
+  font-size: 0.85rem;
+}
+.ppws-chat-clear {
+  color: var(--ppws-muted);
+  align-self: center;
+}
 .ppws-side-img {
   width: 100%;
   height: 100%;

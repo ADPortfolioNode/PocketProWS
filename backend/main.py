@@ -346,6 +346,21 @@ def saved_jobs(profile_id: str):
     return {"profile_id": profile_id, "saved_jobs": p["saved_jobs"]}
 
 
+@app.get("/api/profiles/{profile_id}/chat")
+def chat_history(profile_id: str):
+    messages = profiles_mod.get_chat(profile_id)
+    if messages is None:
+        raise HTTPException(404, "profile not found")
+    return {"profile_id": profile_id, "messages": messages}
+
+
+@app.delete("/api/profiles/{profile_id}/chat")
+def chat_clear(profile_id: str):
+    if not profiles_mod.clear_chat(profile_id):
+        raise HTTPException(404, "profile not found")
+    return {"profile_id": profile_id, "messages": []}
+
+
 @app.post("/api/chat")
 def chat(payload: dict):
     return concierge_answer(payload.get("message", ""),

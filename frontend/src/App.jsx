@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // PocketProWS — Recruiter Workstation, single-page dashboard.
 //
@@ -94,7 +94,12 @@ export default function App() {
   const [location, setLocation] = useState("Remote");
   const [results, setResults] = useState(null);
   const [chatQ, setChatQ] = useState("");
-  const [chatA, setChatA] = useState(null);
+  // Concierge conversation: a real transcript, not a single answer.
+  // With an active profile it is the server's stored history (one
+  // source of truth); without one it lives in this session only.
+  const [chatLog, setChatLog] = useState([]);
+  const [chatBusy, setChatBusy] = useState(false);
+  const chatLogRef = useRef(null);
   const [interview, setInterview] = useState(null);
   const [interviewA, setInterviewA] = useState("");
   const [docs, setDocs] = useState([]);
@@ -141,6 +146,8 @@ export default function App() {
     setInterview(iv);
     const d = await fetch(`/api/profiles/${id}/documents`).then((x) => x.json()).catch(() => ({ documents: [] }));
     setDocs(d.documents || []);
+    const ch = await fetch(`/api/profiles/${id}/chat`).then((x) => x.json()).catch(() => null);
+    setChatLog(ch?.messages || []);
     loadStatus(id);
   };
 
@@ -151,6 +158,12 @@ export default function App() {
   }, []);
 
   useEffect(() => { if (activeId) loadActive(activeId); }, [activeId]);
+
+  // Keep the newest chat message in view.
+  useEffect(() => {
+    const el = chatLogRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [chatLog, chatBusy]);
 
   if (!ready) return <main><h1>PocketProWS</h1><p>Starting up…</p></main>;
 
@@ -203,20 +216,44 @@ export default function App() {
     if (!interviewA.trim()) return;
     const r = await fetch(`/api/profiles/${activeId}/interview/answer`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ answer: interviewA }) });
     const res = await r.json();
-    if (res.error || res.detail) {
-      setChatA({ answer: `⚠ ${res.error || res.detail}` });
-    } else {
-      setChatA({ answer: res.complete ? `All done — thank you! ${res.saved} ${res.summary || ""}` : `${res.saved} Next: ${res.next_question}` });
-    }
+    const note = (res.error || res.detail)
+      ? `⚠ ${res.error || res.detail}`
+      : res.complete
+        ? `All done — thank you! ${res.saved} ${res.summary || ""}`
+        : `${res.saved} Next: ${res.next_question}`;
+    setChatLog((log) => [...log, { role: "assistant", text: note }]);
     setInterviewA("");
     loadActive(activeId);
   };
 
-  const ask = async () => {
-    if (!chatQ.trim()) return;
-    const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: chatQ, profile_id: activeId }) });
-    setChatA(await r.json());
+  const ask = async (preset) => {
+    const text = (typeof preset === "string" ? preset : chatQ).trim();
+    if (!text || chatBusy) return;
     setChatQ("");
+    setChatBusy(true);
+    setChatLog((log) => [...log, { role: "user", text }]);
+    try {
+      const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text, profile_id: activeId }) });
+      const res = await r.json();
+      if (res.history) {
+        // Server history is the truth; attach this turn's job cards to
+        // the concierge's latest message.
+        const hist = res.history.map((m) => ({ role: m.role, text: m.text }));
+        if (hist.length && res.jobs?.length) hist[hist.length - 1].jobs = res.jobs;
+        setChatLog(hist);
+      } else {
+        setChatLog((log) => [...log, { role: "assistant", text: res.answer || "…", jobs: res.jobs }]);
+      }
+    } catch {
+      setChatLog((log) => [...log, { role: "assistant", text: "⚠ I couldn't reach the backend just now — check the status pill above, then ask me again." }]);
+    } finally {
+      setChatBusy(false);
+    }
+  };
+
+  const clearChat = async () => {
+    if (activeId) await fetch(`/api/profiles/${activeId}/chat`, { method: "DELETE" }).catch(() => {});
+    setChatLog([]);
   };
 
   const search = async () => {
@@ -509,11 +546,39 @@ export default function App() {
                     )}
                     {activeId && interview?.complete && <p className="alert alert-success ppws-alert" role="status">✓ Interview complete. {interview.summary}</p>}
                     {!activeId && <p>Add or choose a profile above to start the interview.</p>}
-                    <div className="d-flex flex-column flex-sm-row gap-2">
-                      <input className="form-control" aria-label="concierge question" value={chatQ} onChange={(e) => setChatQ(e.target.value)} placeholder="Ask about a role, skill or location…" />
-                      <button className="btn ppws-btn-outline" onClick={ask}>Ask</button>
+                    <div className="ppws-chat-log" ref={chatLogRef} aria-label="concierge conversation">
+                      {chatLog.length === 0 && !chatBusy && (
+                        <div className="ppws-chat-empty">
+                          <p className="mb-2">Ask me anything about this client&rsquo;s search — or start with one of these:</p>
+                          <div className="ppws-chat-chips">
+                            {["What jobs match this client's resume?", "How are we doing?", "Remote Python jobs"].map((chip) => (
+                              <button key={chip} type="button" className="btn btn-sm ppws-chip" onClick={() => ask(chip)}>{chip}</button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {chatLog.map((m, i) => (
+                        <div key={i} className={`ppws-msg ${m.role === "user" ? "ppws-msg-user" : "ppws-msg-bot"}`}>
+                          <p style={{ whiteSpace: "pre-line" }} className="mb-0">{m.text}</p>
+                          {m.jobs?.length > 0 && (
+                            <div className="ppws-msg-jobs">
+                              {m.jobs.map((j) => (
+                                <a key={j.id || j.url} className="ppws-job-mini" href={j.url} target="_blank" rel="noreferrer">
+                                  <strong>{j.title}</strong>
+                                  <span>{j.company} · {j.location}</span>
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      {chatBusy && <div className="ppws-msg ppws-msg-bot ppws-msg-typing">Thinking…</div>}
                     </div>
-                    {chatA && <p className="ppws-chat-answer" style={{ whiteSpace: "pre-line" }}>{chatA.answer}</p>}
+                    <form className="d-flex flex-column flex-sm-row gap-2 mt-2" onSubmit={(e) => { e.preventDefault(); ask(); }}>
+                      <input className="form-control" aria-label="concierge question" value={chatQ} onChange={(e) => setChatQ(e.target.value)} placeholder="Ask about a role, skill or location…" disabled={chatBusy} />
+                      <button className="btn ppws-btn-outline" type="submit" disabled={chatBusy}>{chatBusy ? "Asking…" : "Ask"}</button>
+                      {chatLog.length > 0 && <button className="btn btn-sm btn-link ppws-chat-clear" type="button" onClick={clearChat}>Clear chat</button>}
+                    </form>
                   </div>
                   <div className="col-md-4 d-none d-md-block">
                     <img className="ppws-side-img" src={CONCIERGE_IMAGE} alt="A recruiting team collaborating around a table with laptops" loading="lazy" />
