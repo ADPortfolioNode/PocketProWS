@@ -16,9 +16,17 @@ import { useEffect, useState } from "react";
 // interview answer is saved, so it is never hard-coded and never stale.
 // No client name is hard-coded anywhere in this file.
 const WORKFLOW_LABELS = {
-  interview: "Interview", documents: "Documents", preferences: "Preferences",
+  documents: "Documents", interview: "Interview", preferences: "Preferences",
   job_search: "Job search", applications: "Applications", follow_up: "Follow-up",
 };
+// Which panel each workflow step lives in. The page focuses ONE panel at
+// a time — the current step's — and minimizes the rest (Anthony,
+// 2026-11-21: the user's step dominates the content area).
+const PANEL_FOR_STEP = {
+  documents: "documents", interview: "interview", preferences: "interview",
+  job_search: "search", applications: "agents", follow_up: "agents",
+};
+const PANEL_ORDER = ["documents", "interview", "search", "agents"];
 
 // Presentational only: photography + one-line guidance for the "How it
 // works" workflow cards. No behavior reads these.
@@ -50,13 +58,28 @@ const STEP_TARGETS = {
 // yet, their cards lead to the client panel first — that is the flow.
 const PROFILE_FIRST_STEPS = ["documents", "applications", "follow_up"];
 const STEP_GUIDE = {
-  interview: "Answer the concierge's questions one at a time — every answer is saved into the client's profile and shapes the search.",
-  documents: "Add a resume, work history or certificates. Each file is digested into the skills and credentials the search can use.",
+  documents: "Start here — add the client's resume first. Its skills, certifications and contact details are pulled straight from the file, before any interview.",
+  interview: "Answer the concierge's questions one at a time — every answer is saved into the client's profile. Skills are confirmed from the resume, never typed in.",
   preferences: "The interview fills in target roles, location and remote preference, so searches stay focused on the right openings.",
   job_search: "Search across the connected job sources and review the matches, grouped by where they came from.",
   applications: "Track each saved job as it moves from saved to applied, interviewing, offer and hired.",
   follow_up: "Run the agents to surface follow-ups that are due, use the drafts they prepare, and mark steps done as the work gets done.",
 };
+
+// A minimized workflow panel: the step is still on the page (its anchor
+// target exists and the workflow cards still land here), but it takes a
+// single slim bar until the user opens it or the workflow reaches it.
+function MinPanel({ id, title, blurb, onOpen }) {
+  return (
+    <section className="card ppws-card ppws-panel-min" id={id}>
+      <div className="card-body">
+        <h2 className="ppws-card-title ppws-min-title">{title}</h2>
+        <p className="ppws-min-blurb">{blurb}</p>
+        <button className="btn btn-sm ppws-btn-accent ms-auto" onClick={onOpen}>Open this step</button>
+      </div>
+    </section>
+  );
+}
 
 export default function App() {
   const [ready, setReady] = useState(false);
@@ -78,6 +101,12 @@ export default function App() {
   const [docMsg, setDocMsg] = useState("");
   const [status, setStatus] = useState(null);
   const [agentMsg, setAgentMsg] = useState("");
+  // Step focus: which workflow panel dominates the content area. Null
+  // means "follow the workflow" — the current step's panel. Clicking a
+  // workflow card, a step row, or a minimized panel's Open button moves
+  // the focus without touching the workflow state itself.
+  const [focusPanel, setFocusPanel] = useState(null);
+  const [resourcesOpen, setResourcesOpen] = useState(false);
 
   const loadStatus = async (id) => {
     if (!id) { setStatus(null); return; }
@@ -254,6 +283,13 @@ export default function App() {
 
   const stepTarget = (step) => (!activeId && PROFILE_FIRST_STEPS.includes(step) ? "#client" : STEP_TARGETS[step]);
 
+  // The panel that dominates right now: the user's chosen focus, else
+  // the workflow's current step. Other workflow panels render minimized.
+  const currentPanel = PANEL_FOR_STEP[active?.workflow?.current_step] || "documents";
+  const shownPanel = focusPanel || currentPanel;
+  const panelOrder = (panel) => (!activeId ? undefined : panel === shownPanel ? 2 : 11 + PANEL_ORDER.indexOf(panel));
+  const focusSection = (panel) => (activeId && shownPanel === panel ? " ppws-panel-focus" : "");
+
   return (
     <div className="ppws-app">
       <nav className="navbar sticky-top ppws-navbar">
@@ -312,7 +348,7 @@ export default function App() {
         </div>
       </header>
 
-      <section className="ppws-section" aria-label="How it works">
+      <section className={`ppws-section ppws-howto${activeId ? " is-compact" : ""}`} aria-label="How it works">
         <div className="container">
           <div className="ppws-section-head">
             <p className="ppws-eyebrow ppws-eyebrow-dark">Workflow guidance</p>
@@ -328,7 +364,7 @@ export default function App() {
                     <span className="ppws-step-badge">Step {i + 1}</span>
                   </div>
                   <div className="card-body">
-                    <h3 className="ppws-step-title"><a className="ppws-step-link stretched-link" href={stepTarget(step)}>{WORKFLOW_LABELS[step]}</a></h3>
+                    <h3 className="ppws-step-title"><a className="ppws-step-link stretched-link" href={stepTarget(step)} onClick={() => setFocusPanel(PANEL_FOR_STEP[step])}>{WORKFLOW_LABELS[step]}</a></h3>
                     <p className="ppws-step-guide">{STEP_GUIDE[step]}</p>
                     <p className="ppws-step-cta">{!activeId && PROFILE_FIRST_STEPS.includes(step) ? "Choose a client first" : "Open this step"} <span aria-hidden="true">→</span></p>
                   </div>
@@ -381,7 +417,7 @@ export default function App() {
                   <ol className="ppws-steps">{active.workflow.steps.map((s) => (
                     <li key={s.step} className={`ppws-step${s.done ? " is-done" : ""}${s.step === active.workflow.current_step ? " is-current" : ""}`}>
                       <span className="ppws-step-dot" aria-hidden="true">{s.done ? "✓" : "○"}</span>
-                      <span className="ppws-step-name"><a className="ppws-step-row-link" href={stepTarget(s.step)}>{WORKFLOW_LABELS[s.step]}</a></span>
+                      <span className="ppws-step-name"><a className="ppws-step-row-link" href={stepTarget(s.step)} onClick={() => setFocusPanel(PANEL_FOR_STEP[s.step])}>{WORKFLOW_LABELS[s.step]}</a></span>
                       {s.step === active.workflow.current_step && <span className="badge ppws-current-badge">Current</span>}
                       {!s.done && (s.step === "applications" || s.step === "follow_up") && <button className="btn btn-sm ppws-btn-accent ms-auto" onClick={() => markStep(s.step)}>Mark done</button>}
                     </li>))}</ol>
@@ -390,9 +426,15 @@ export default function App() {
             </div>
           )}
 
-          {activeId && status && (
-            <div className="col-12">
-              <section className="card ppws-card" id="agents">
+          {activeId && status && shownPanel !== "agents" && (
+            <div className="col-12" style={{ order: panelOrder("agents") }}>
+              <MinPanel id="agents" title="Agents — applications & follow-up" blurb="Pipeline, follow-ups due and saved-job statuses live here." onOpen={() => setFocusPanel("agents")} />
+            </div>
+          )}
+
+          {activeId && status && shownPanel === "agents" && (
+            <div className="col-12" style={{ order: panelOrder("agents") }}>
+              <section className={`card ppws-card${focusSection("agents")}`} id="agents">
                 <div className="card-body">
                   <h2 className="ppws-card-title">Agents — workflow status for {status.client_name || activeId}</h2>
                   <p>The agents run on demand and report here — the same status the concierge reports when you ask “what’s the status?” Applying to an employer stays outside the app; the agents record what happened, they never submit an application.</p>
@@ -430,13 +472,20 @@ export default function App() {
             </div>
           )}
 
-          <div className="col-12 col-lg-7">
-            <section className="card ppws-card h-100" id="interview">
+          {activeId && shownPanel !== "interview" && (
+            <div className="col-12" style={{ order: panelOrder("interview") }}>
+              <MinPanel id="interview" title="Concierge recruiter — interview & preferences" blurb="One question at a time; skills are confirmed from the resume, never typed in." onOpen={() => setFocusPanel("interview")} />
+            </div>
+          )}
+
+          {(!activeId || shownPanel === "interview") && (
+          <div className={activeId ? "col-12" : "col-12 col-lg-7"} style={{ order: panelOrder("interview") }}>
+            <section className={`card ppws-card h-100${focusSection("interview")}`} id="interview">
               <div className="card-body">
                 <div className="row g-3">
                   <div className="col-12 col-md-8">
                     <h2 className="ppws-card-title">Concierge recruiter</h2>
-                    <p>Hi! I&rsquo;m your friendly recruiter concierge. On first load I ask who our client is — the client seeks work, the employer hires — then one question at a time. Each answer is saved into that profile&rsquo;s resource, and I tell you what I saved.</p>
+                    <p>Hi! I&rsquo;m your friendly recruiter concierge. The resume comes first — add it under Documents and I pull the skills from it — then I ask who our client is (the client seeks work, the employer hires) and go one question at a time. Each answer is saved into that profile&rsquo;s resource, and I tell you what I saved.</p>
                     {activeId && interview && !interview.complete && (
                       <div className="ppws-interview">
                         <p><strong>Question {interview.step + 1} of {interview.total}:</strong> {interview.next_question}</p>
@@ -461,13 +510,20 @@ export default function App() {
               </div>
             </section>
           </div>
+          )}
 
-          {activeId && (
-            <div className="col-12 col-lg-5">
-              <section className="card ppws-card h-100" id="documents">
+          {activeId && shownPanel !== "documents" && (
+            <div className="col-12" style={{ order: panelOrder("documents") }}>
+              <MinPanel id="documents" title="Documents — resume first" blurb="The resume comes first: skills are pulled from it before the interview." onOpen={() => setFocusPanel("documents")} />
+            </div>
+          )}
+
+          {activeId && shownPanel === "documents" && (
+            <div className="col-12" style={{ order: panelOrder("documents") }}>
+              <section className={`card ppws-card${focusSection("documents")}`} id="documents">
                 <div className="card-body">
-                  <h2 className="ppws-card-title">Profile documents — Add / Edit / Delete</h2>
-                  <p>You own these files. Add a resume, work history or certificate and I digest it into this profile&rsquo;s resource — skills, certifications, education — and into their RAG store. Edit renames a document; delete removes it from the resource and RAG too.</p>
+                  <h2 className="ppws-card-title">Start here — add the resume first</h2>
+                  <p>You own these files. Add the client&rsquo;s <strong>resume first</strong>: I pull its skills, certifications, education and contact details straight from the file, and the interview then confirms what&rsquo;s on it — matching always uses the skills the resume lists. Work history or certificates can follow. Edit renames a document; delete removes it from the resource and RAG too.</p>
                   <label className="form-label ppws-file-label">Add a document: <input className="form-control" type="file" onChange={uploadDoc} /></label>
                   {docMsg && <p className="ppws-doc-msg">{docMsg}</p>}
                   <ul className="ppws-list ppws-doc-list">{docs.map((d) => (
@@ -484,8 +540,15 @@ export default function App() {
             </div>
           )}
 
-          <div className="col-12">
-            <section className="card ppws-card" id="search">
+          {activeId && shownPanel !== "search" && (
+            <div className="col-12" style={{ order: panelOrder("search") }}>
+              <MinPanel id="search" title="Job search" blurb="Search the connected job sources with the resume's skills behind the profile." onOpen={() => setFocusPanel("search")} />
+            </div>
+          )}
+
+          {(!activeId || shownPanel === "search") && (
+          <div className="col-12" style={{ order: panelOrder("search") }}>
+            <section className={`card ppws-card${focusSection("search")}`} id="search">
               <div className="card-body">
                 <h2 className="ppws-card-title">Job search {activeId ? `— for client ${header?.client_name || activeId}` : "(choose a profile first)"}</h2>
                 <div className="row g-2">
@@ -509,9 +572,17 @@ export default function App() {
               </div>
             </section>
           </div>
+          )}
 
-          <div className="col-12">
-            <section className="card ppws-card">
+          {activeId && !resourcesOpen && (
+            <div className="col-12" style={{ order: 15 }}>
+              <MinPanel id="resources" title="Resources" blurb="The connected job sources, free and gated." onOpen={() => setResourcesOpen(true)} />
+            </div>
+          )}
+
+          {(!activeId || resourcesOpen) && (
+          <div className="col-12" style={{ order: 15 }}>
+            <section className="card ppws-card" id="resources">
               <div className="card-body">
                 <h2 className="ppws-card-title">Resources</h2>
                 <p>Free sources (verified 2026-11-07): Adzuna, Jooble, USAJOBS (free keys) + Remotive, RemoteOK, Arbeitnow (no key). Indeed, Dice and Monster are gated — no public search API. Research doc: <code>your_files/pocketprows-job-board-apis-2026-11-07.md</code>.</p>
@@ -523,6 +594,7 @@ export default function App() {
               </div>
             </section>
           </div>
+          )}
         </div>
       </main>
 

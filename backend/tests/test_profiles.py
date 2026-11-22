@@ -32,7 +32,7 @@ def test_create_list_get_profile():
     assert any(x["id"] == p["id"] for x in r.json()["profiles"])
     r = client.get(f"/api/profiles/{p['id']}")
     assert r.status_code == 200
-    assert r.json()["workflow"]["current_step"] == "interview"
+    assert r.json()["workflow"]["current_step"] == "documents"  # resume first
     assert r.json()["interview"]["complete"] is False
     assert r.json()["header"]["client_name"] == "Anthony Dickerson"
 
@@ -76,7 +76,7 @@ def test_unknown_profile_404():
 def test_workflow_advances_with_data():
     p = _mk()
     w = client.get(f"/api/profiles/{p['id']}/workflow").json()
-    assert w["current_step"] == "interview"
+    assert w["current_step"] == "documents"  # resume first, before interview
     client.patch(f"/api/profiles/{p['id']}",
                  json={"client": {"target_roles": ["AI Engineer"], "location": "Remote"}})
     w = client.get(f"/api/profiles/{p['id']}/workflow").json()
@@ -92,7 +92,7 @@ def test_first_profile_becomes_active_and_header_shows_it():
     assert r.status_code == 200
     assert r.json()["active_profile_id"] == p["id"]
     assert r.json()["header"]["client_name"] == "Anthony Dickerson"
-    assert r.json()["header"]["current_step"] == "interview"
+    assert r.json()["header"]["current_step"] == "documents"  # resume first
 
 
 def test_switching_active_profile_updates_header():
@@ -133,7 +133,7 @@ def test_header_updates_after_interview_answer():
     h = client.get("/api/profiles/active").json()["header"]
     assert h["target_roles"] == ["AI Engineer", "Web Developer"]
     assert h["client_name"] == "Anthony Dickerson"
-    assert h["current_step"] == "interview"  # interview still in progress
+    assert h["current_step"] == "documents"  # resume still owed — it comes before the interview finishes
 
 
 # ------------------------------------------------------- per-profile isolation
