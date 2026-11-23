@@ -81,6 +81,92 @@ function MinPanel({ id, title, blurb, onOpen }) {
   );
 }
 
+// Email the finished apply pack — the final step of application prep
+// (Anthony, 2026-11-23). Two steps by design: compose, then a review
+// screen naming the exact recipient, subject and attachment; only the
+// "Approve and send" button on that screen sends, and the backend
+// requires the same explicit approval. Nothing sends from the edit
+// step, and nothing ever sends itself.
+function EmailApplication({ profileId, job, pack, docs, clientName, onSent }) {
+  const [mail, setMail] = useState(null);
+  const [to, setTo] = useState("");
+  const [subject, setSubject] = useState(`Application for ${job.title} — ${clientName}`);
+  const [body, setBody] = useState(pack.cover_letter || "");
+  const [docId, setDocId] = useState("");
+  const [stage, setStage] = useState("edit");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    fetch("/api/mail/status").then((r) => r.json()).then(setMail)
+      .catch(() => setMail({ configured: false, missing: [] }));
+  }, []);
+  useEffect(() => { if (!docId && docs.length) setDocId(docs[0].id); }, [docs, docId]);
+
+  if (mail === null) {
+    return <div className="ppws-email"><p className="mb-1">Checking email…</p></div>;
+  }
+  if (!mail.configured) {
+    return (
+      <div className="ppws-email">
+        <p className="mb-1"><strong>Email this application:</strong> email is not configured yet — add {mail.missing && mail.missing.length ? mail.missing.join(", ") : "the POCKETPROWS_SMTP_* settings"} to the app's .env and restart, and this pack can be emailed from here, with your approval on each send.</p>
+      </div>
+    );
+  }
+  const attachDoc = docs.find((d) => d.id === docId);
+  const attachName = attachDoc ? (attachDoc.filename || attachDoc.title || attachDoc.id) : "none";
+  const send = async () => {
+    setBusy(true); setMsg("");
+    try {
+      const r = await fetch(`/api/profiles/${profileId}/saved-jobs/${job.id}/email-application`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to, subject, body, document_id: docId || null, confirm: true }),
+      });
+      const res = await r.json().catch(() => ({}));
+      if (!r.ok) { setMsg(`Not sent: ${res.detail || `the server returned ${r.status}`}`); setStage("edit"); return; }
+      setStage("sent");
+      setMsg(`Emailed to ${res.emailed.to} — this job is now marked Applied.`);
+      if (onSent) onSent();
+    } catch { setMsg("Not sent: could not reach the server — check the app is still running."); setStage("edit"); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="ppws-email">
+      <p className="mb-1"><strong>Email this application</strong> (from {mail.from})</p>
+      {pack.emailed && <p className="ppws-email-sent">Already emailed to {pack.emailed.to} on {(pack.emailed.at || "").slice(0, 10)}.</p>}
+      {stage === "sent" && <p className="ppws-email-sent">{msg}</p>}
+      {stage === "edit" && (
+        <>
+          {msg && <p className="ppws-email-error">{msg}</p>}
+          <label className="ppws-email-field">To
+            <input className="form-control" type="email" value={to} onChange={(e) => setTo(e.target.value)} placeholder="hiring@company.com" />
+          </label>
+          <label className="ppws-email-field">Subject
+            <input className="form-control" value={subject} onChange={(e) => setSubject(e.target.value)} />
+          </label>
+          <label className="ppws-email-field">Attach
+            <select className="form-control" value={docId} onChange={(e) => setDocId(e.target.value)}>
+              <option value="">No attachment</option>
+              {docs.map((d) => <option key={d.id} value={d.id}>{d.filename || d.title || d.id}</option>)}
+            </select>
+          </label>
+          <label className="ppws-email-field">Cover letter (the email body)
+            <textarea className="form-control" rows={8} value={body} onChange={(e) => setBody(e.target.value)} />
+          </label>
+          <button className="btn btn-sm ppws-btn-accent" disabled={!to.includes("@")} onClick={() => setStage("review")}>Review send</button>
+        </>
+      )}
+      {stage === "review" && (
+        <>
+          <p className="mb-1">Send to <strong>{to}</strong> — subject “{subject}” — attachment: {attachName}. This sends a real email from your mailbox.</p>
+          <button className="btn btn-sm ppws-btn-accent" disabled={busy} onClick={send}>{busy ? "Sending…" : "Approve and send"}</button>
+          <button className="btn btn-sm btn-outline-secondary ms-2" disabled={busy} onClick={() => setStage("edit")}>Back to edit</button>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const [ready, setReady] = useState(false);
   const [health, setHealth] = useState(null);
@@ -658,6 +744,7 @@ export default function App() {
                                     </div>
                                   ))}
                                   <p className="ppws-pack-note">{packs[j.id].note} <a href={j.url} target="_blank" rel="noreferrer">Open the posting</a></p>
+                                  <EmailApplication profileId={activeId} job={j} pack={packs[j.id]} docs={docs} clientName={active?.client?.name || ""} onSent={() => loadActive(activeId)} />
                                 </>
                               )}
                             </div>

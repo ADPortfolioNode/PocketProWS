@@ -25,6 +25,7 @@ active profile is switched, created, or edited — never hard-coded, never
 stale. Everything is scoped by profile_id (the single scoping key).
 """
 import os
+import re
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -291,6 +292,77 @@ def apply_pack_get(profile_id: str, job_id: str):
     if "error" in res:
         raise HTTPException(_err_status(res["error"]), res["error"])
     return res
+
+
+@app.get("/api/mail/status")
+def mail_status():
+    from . import mailer as mail_mod
+    return mail_mod.status()
+
+
+@app.post("/api/profiles/{profile_id}/saved-jobs/{job_id}/email-application")
+def email_application(profile_id: str, job_id: str, payload: dict):
+    """Email a finished apply pack — the final step of application
+    prep. Sends ONLY with the caller's explicit approval for this
+    message (payload confirm: true, set by the UI's review step), to
+    the recipient given, with the reviewed text. On success the send
+    is recorded on the pack and a still-'saved' job moves to
+    'applied' — it was applied, by email, at the client's direction."""
+    from . import mailer as mail_mod
+    if payload.get("confirm") is not True:
+        raise HTTPException(400, "sending requires your explicit approval "
+                                 "for this message (confirm)")
+    profile = profiles_mod.get_profile(profile_id)
+    if not profile:
+        raise HTTPException(404, "profile not found")
+    job = next((j for j in profile.get("saved_jobs") or []
+                if j.get("id") == job_id), None)
+    if not job:
+        raise HTTPException(404, "job not found in this profile's saved jobs")
+    pack = job.get("apply_pack")
+    if not pack:
+        raise HTTPException(400, "build the apply pack first — the email "
+                                 "sends the pack's cover letter")
+    to = (payload.get("to") or "").strip()
+    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", to):
+        raise HTTPException(400, f"'{to}' does not look like an email address")
+    client_name = profile["client"].get("name") or "the client"
+    subject = (payload.get("subject") or "").strip() or (
+        f"Application for {job.get('title', 'the role')} — {client_name}")
+    body = (payload.get("body") or "").strip() or pack.get("cover_letter", "")
+    if not body:
+        raise HTTPException(400, "the email body is empty")
+    attachment = None
+    doc_id = payload.get("document_id")
+    if doc_id:
+        info = profiles_mod.document_file(profile_id, doc_id)
+        if "error" in info:
+            raise HTTPException(400, info["error"])
+        attachment = {"filename": info["filename"],
+                      "data": info["path"].read_bytes()}
+    st = mail_mod.status()
+    if not st["configured"]:
+        raise HTTPException(400, "email is not configured — missing "
+                                 + ", ".join(st["missing"]) + " in .env")
+    try:
+        record = mail_mod.send(to, subject, body, attachment)
+    except RuntimeError as exc:
+        raise HTTPException(502, f"email failed: {exc}") from exc
+    profiles = profiles_mod._load()
+    p = profiles.get(profile_id)
+    stored = next((j for j in p["saved_jobs"] if j.get("id") == job_id), None)
+    if stored is not None and stored.get("apply_pack") is not None:
+        stored["apply_pack"]["emailed"] = record
+        profiles_mod._save(profiles)
+    job_status = (stored or {}).get("application_status") or "saved"
+    if job_status == "saved":
+        res = agents_mod.set_application_status(
+            profile_id, job_id, "applied",
+            note=f"Application emailed to {to} from PocketProWS "
+                 f"after the client's approval.")
+        if "job" in res:
+            job_status = "applied"
+    return {"emailed": record, "job_status": job_status}
 
 
 @app.patch("/api/profiles/{profile_id}/saved-jobs/{job_id}/status")

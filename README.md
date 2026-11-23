@@ -172,6 +172,21 @@ correction pass and a re-check, and the pack shows the verdict.
 Preparation only: the client reviews, opens the posting, and submits
 themselves — nothing is ever sent automatically.
 
+**Emailing a pack** (`backend/mailer.py`) is the one exception, and
+only at the client's hand: when SMTP is configured, a pack gains an
+email step — compose (recipient, subject, the letter as the body, one
+document attached), then a review screen naming exactly what will be
+sent, and only that screen's **Approve and send** sends. The backend
+requires the same explicit approval, records the send on the pack,
+and moves the job to Applied. Employer web forms are still never
+touched. Settings live in the local `.env` (never in code or chat):
+`POCKETPROWS_SMTP_HOST`, `POCKETPROWS_SMTP_PORT` (default 587),
+`POCKETPROWS_SMTP_USER`, `POCKETPROWS_SMTP_PASSWORD` (a mailbox
+**app password**, not the account password), and optional
+`POCKETPROWS_SMTP_FROM`. For Gmail: host `smtp.gmail.com`, the user
+is the Gmail address, and the password is an app password created in
+the Google account's security settings.
+
 Profile-scoped searches run a **disqualifier filter**
 (`backend/disqualify.py`): a job is omitted only when its own stated
 requirements provably fail against the client's record — a degree
