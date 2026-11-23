@@ -337,12 +337,19 @@ export default function App() {
     const fd = new FormData();
     fd.append("file", file);
     const r = await fetch(`/api/profiles/${activeId}/documents`, { method: "POST", body: fd }).catch(() => null);
-    const res = r ? await r.json().catch(() => ({})) : {};
-    if (res.document) {
-      const d = res.extracted || {};
-      setDocMsg(`Added “${file.name}” — digested into ${header?.client_name || "this client"}'s resource. Found: skills ${d.skills?.join(", ") || "none"}, certifications ${d.certifications?.length || 0}, email ${d.email || "—"}.`);
+    if (!r) {
+      setDocMsg("Upload failed: could not reach the server — check the app is still running, then try again.");
     } else {
-      setDocMsg(`Upload failed: ${res.detail || "unknown error"}`);
+      const raw = await r.text().catch(() => "");
+      let res = {};
+      try { res = JSON.parse(raw); } catch { /* plain-text error body */ }
+      if (res.document) {
+        const d = res.extracted || {};
+        setDocMsg(`Added “${file.name}” — digested into ${header?.client_name || "this client"}'s resource. Found: skills ${d.skills?.join(", ") || "none"}, certifications ${d.certifications?.length || 0}, email ${d.email || "—"}.`);
+      } else {
+        const why = res.detail || (raw ? `the server returned ${r.status} — ${raw.slice(0, 120)}` : `the server returned ${r.status}`);
+        setDocMsg(`Upload failed: ${why}`);
+      }
     }
     setDocBusy(false);
     setDocFile(null);
