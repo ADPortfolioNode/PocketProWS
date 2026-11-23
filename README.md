@@ -101,6 +101,8 @@ change only by replacing or re-digesting a document.
 
 The concierge interviews one question at a time (11 questions, identity
 first), saves each answer, and confirms what it saved. Documents are
+added in two explicit steps — the file picker stages the chosen file,
+the **Upload file** button sends it — and are
 digested on upload/replace (TXT/MD, DOCX, PDF best-effort): skills,
 certifications, education, email/phone are extracted into the profile's
 client record and the text is chunked into a dedicated Chroma collection
