@@ -303,8 +303,10 @@ def build_pack(client: dict, job: dict) -> dict:
             "llm_errors": gen["errors"] if not gen["text"] else {},
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "note": "Preparation only — review everything, then open the "
-                    "posting and submit it yourself. Nothing is sent "
-                    "automatically."}
+                    "posting and submit it yourself, or email the pack "
+                    "from here when email is configured. Nothing is "
+                    "sent automatically — every email needs your "
+                    "approval on its review screen first."}
 
 
 def generate_pack(profile_id: str, job_id: str) -> dict:
