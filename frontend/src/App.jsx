@@ -562,6 +562,20 @@ export default function App() {
                                     {packs[j.id].fit.matched.length > 0 && <> Matched: {packs[j.id].fit.matched.join(", ")}.</>}
                                     {packs[j.id].fit.missing.length > 0 && <> Not on the resume: {packs[j.id].fit.missing.join(", ")}.</>}</p>
                                   <p className="ppws-pack-provider">Cover letter written by: {packs[j.id].provider === "template" ? "the built-in template (no LM key configured)" : packs[j.id].provider}</p>
+                                  {packs[j.id].letter_check && (
+                                    packs[j.id].letter_check.checked ? (
+                                      packs[j.id].letter_check.verdict === "pass" ? (
+                                        <p className="ppws-pack-check">LM check ({packs[j.id].letter_check.provider}): passed — nothing invented, nothing on your record left out.{packs[j.id].letter_check.revised ? " One correction pass was applied first." : ""}</p>
+                                      ) : (
+                                        <div className="ppws-pack-check is-flagged">
+                                          <p className="mb-1">LM check ({packs[j.id].letter_check.provider}) found problems{packs[j.id].letter_check.revised ? " — the letter above is the corrected version, but these remain:" : ":"}</p>
+                                          <ul className="mb-1">{packs[j.id].letter_check.issues.map((it, ii) => <li key={ii}>{it}</li>)}</ul>
+                                        </div>
+                                      )
+                                    ) : (
+                                      <p className="ppws-pack-check">LM check unavailable ({packs[j.id].letter_check.reason}) — read the letter carefully before sending.</p>
+                                    )
+                                  )}
                                   <div className="ppws-pack-letter" style={{ whiteSpace: "pre-line" }}>{packs[j.id].cover_letter}</div>
                                   <button className="btn btn-sm btn-outline-primary" onClick={() => copyText(`letter-${j.id}`, packs[j.id].cover_letter)}>{copied === `letter-${j.id}` ? "Copied ✓" : "Copy cover letter"}</button>
                                   {packs[j.id].answers.map((a, ai) => (

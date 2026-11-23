@@ -143,9 +143,14 @@ application questions — all from the client's own profile. The letter
 is written by the LLM chain when a key is configured
 (`GEMINI_API_KEY`, then `GROQ_API_KEY`, in the local `.env`;
 `backend/llm.py`), otherwise by a built-in template from the same
-facts, and the pack names its provider. Preparation only: the client
-reviews, opens the posting, and submits themselves — nothing is ever
-sent automatically.
+facts, and the pack names its provider. The LM then **checks the
+letter against the record** — for stupidity (invented facts, wrong
+names or contact details, placeholders, contradictions) and for
+regression (matched skills, certifications or requested highlights
+the letter left out; the role understated). Flagged issues get one
+correction pass and a re-check, and the pack shows the verdict.
+Preparation only: the client reviews, opens the posting, and submits
+themselves — nothing is ever sent automatically.
 
 Profile-scoped searches run a **disqualifier filter**
 (`backend/disqualify.py`): a job is omitted only when its own stated

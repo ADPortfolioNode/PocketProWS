@@ -45,6 +45,7 @@ const PACK = {
   cover_letter: "Dear Acme hiring team,\n\nI am applying for the Python Developer position at Acme.",
   answers: [{ question: "Why are you interested in this role?", answer: "Because it fits." }],
   provider: "template", generated_at: "2026-11-22T00:00:00Z",
+  letter_check: { checked: true, provider: "gemini", verdict: "pass", issues: [], revised: false },
   note: "Preparation only — review everything, then open the posting and submit it yourself.",
 };
 
@@ -102,6 +103,7 @@ describe("apply pack", () => {
       expect(pack.textContent).toContain("I am applying for the Python Developer position at Acme.");
       expect(pack.textContent).toContain("Why are you interested in this role?");
       expect(pack.textContent).toContain("submit it yourself");
+      expect(pack.textContent).toContain("LM check (gemini): passed");
     }, { timeout: 3000 });
     root.unmount();
   });
