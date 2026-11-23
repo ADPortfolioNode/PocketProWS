@@ -844,6 +844,60 @@ def _extract_pdf_text(data: bytes) -> str:
     return " ".join(out)
 
 
+def _coursera_title(lines: list, low_lines: list) -> str:
+    """The credential on a Coursera-style certificate, read from the
+    layout's own anchors. The old longest-line-in-a-window heuristic
+    kept landing on the signatory's job title ('Engineering Manager
+    and AI Specialist', 'Associate Professor, Department of...') and
+    truncating titles that wrap two lines. Two forms:
+    - Professional Certificate: the completion sentence names it and
+      the program name follows on its own line ('IBM AI Engineering'
+      under '...Professional Certificate').
+    - Course: the title is the block of lines directly above the
+      'an online non-credit course authorized by...' line, under the
+      date and the recipient's name (name lines come first in the
+      block and read as one to three capitalized words)."""
+    idx = next((i for i, l in enumerate(low_lines)
+                if "successfully completed" in l), None)
+    if idx is None:
+        return ""
+    block = " ".join(low_lines[idx:idx + 3]).replace("ﬁ", "fi")
+    if "professional" in block and "certificate" in block:
+        for k in range(idx + 1, min(idx + 5, len(lines))):
+            cand = lines[k].strip()
+            if cand.lower().replace("ﬁ", "fi") in (
+                    "certificate", "professional certificate"):
+                continue
+            if len(cand) >= 3:
+                return (cand if "certificate" in cand.lower()
+                        else cand + " Professional Certificate")
+    j = next((i for i, l in enumerate(low_lines)
+              if "non-credit" in l and "authorized" in l and i <= idx), None)
+    if j is None:
+        return ""
+    block_lines = []
+    for k in range(j - 1, -1, -1):
+        if re.search(r"\b(19|20)\d{2}\b", lines[k]):
+            break
+        block_lines.append(lines[k])
+        if len(block_lines) >= 5:
+            break
+    block_lines.reverse()
+
+    def _name_like(s: str) -> bool:
+        ws = s.split()
+        return (1 <= len(ws) <= 3
+                and all(w[:1].isupper() and not any(c.isdigit() for c in w)
+                        for w in ws))
+
+    while len(block_lines) > 1 and _name_like(block_lines[0]):
+        block_lines.pop(0)
+    title = " ".join(block_lines).strip()
+    if 8 <= len(title) <= 120 and len(title.split()) >= 2:
+        return title
+    return ""
+
+
 def digest_text(text: str) -> dict:
     """Pull structured facts out of a document's text into the profile."""
     low = text.lower()
@@ -875,6 +929,10 @@ def digest_text(text: str) -> dict:
     # boilerplate (authorization / verify / identity lines) and names.
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     low_lines = [l.lower() for l in lines]
+    if not found["certifications"]:
+        coursera = _coursera_title(lines, low_lines)
+        if coursera:
+            found["certifications"].append(coursera)
     if not found["certifications"] and any(
             "successfully completed" in l or "certificate of" in l for l in low_lines):
         boiler = ("successfully completed", "non-credit", "authorized",
