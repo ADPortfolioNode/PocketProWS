@@ -108,6 +108,9 @@ export default function App() {
   const [interviewA, setInterviewA] = useState("");
   const [docs, setDocs] = useState([]);
   const [docMsg, setDocMsg] = useState("");
+  const [docFile, setDocFile] = useState(null);
+  const [docBusy, setDocBusy] = useState(false);
+  const [docInputKey, setDocInputKey] = useState(0);
   const [viewDoc, setViewDoc] = useState(null);
   const [status, setStatus] = useState(null);
   const [agentMsg, setAgentMsg] = useState("");
@@ -324,20 +327,26 @@ export default function App() {
     if (activeId) loadActive(activeId);
   };
 
-  const uploadDoc = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Choose stages the file; the Upload file button submits it — an
+  // explicit step, so the client always knows when a file has
+  // actually been sent (Anthony, 2026-11-23).
+  const uploadDoc = async () => {
+    const file = docFile;
+    if (!file || !activeId) return;
+    setDocBusy(true);
     const fd = new FormData();
     fd.append("file", file);
-    const r = await fetch(`/api/profiles/${activeId}/documents`, { method: "POST", body: fd });
-    const res = await r.json();
+    const r = await fetch(`/api/profiles/${activeId}/documents`, { method: "POST", body: fd }).catch(() => null);
+    const res = r ? await r.json().catch(() => ({})) : {};
     if (res.document) {
       const d = res.extracted || {};
       setDocMsg(`Added “${file.name}” — digested into ${header?.client_name || "this client"}'s resource. Found: skills ${d.skills?.join(", ") || "none"}, certifications ${d.certifications?.length || 0}, email ${d.email || "—"}.`);
     } else {
       setDocMsg(`Upload failed: ${res.detail || "unknown error"}`);
     }
-    e.target.value = "";
+    setDocBusy(false);
+    setDocFile(null);
+    setDocInputKey((k) => k + 1);
     loadActive(activeId);
   };
 
@@ -737,7 +746,11 @@ export default function App() {
                 <div className="card-body">
                   <h2 className="ppws-card-title">Start here — add the resume first</h2>
                   <p>You own these files. Add the client&rsquo;s <strong>resume first</strong>: I pull its skills, certifications, education and contact details straight from the file, and the interview then confirms what&rsquo;s on it — matching always uses the skills the resume lists. Work history or certificates can follow. Edit renames a document; delete removes it from the resource and RAG too.</p>
-                  <label className="form-label ppws-file-label">Add a document: <input className="form-control" type="file" onChange={uploadDoc} /></label>
+                  <div className="ppws-upload-row">
+                    <label className="form-label ppws-file-label">Add a document: <input key={docInputKey} className="form-control" type="file" onChange={(e) => setDocFile(e.target.files?.[0] || null)} /></label>
+                    <button className="btn ppws-btn-accent" disabled={!docFile || docBusy} onClick={uploadDoc}>{docBusy ? "Uploading…" : "Upload file"}</button>
+                    {docFile && !docBusy && <span className="ppws-doc-chosen">Ready: {docFile.name}</span>}
+                  </div>
                   {docMsg && <p className="ppws-doc-msg">{docMsg}</p>}
                   <ul className="ppws-list ppws-doc-list">{docs.map((d) => (
                     <li key={d.id}><span className="ppws-doc-text"><button type="button" className="ppws-doc-title-btn" onClick={() => viewDocument(d)} title="View this document">{d.title}</button> ({d.text_chars} chars digested)

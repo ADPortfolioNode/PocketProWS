@@ -632,6 +632,22 @@ body {
   margin-top: 0.4rem;
   font-weight: 400;
 }
+/* Choose-then-upload (2026-11-23): the picker stages the file, the
+   Upload file button submits it. */
+.ppws-upload-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: flex-end;
+}
+.ppws-upload-row .ppws-file-label {
+  flex: 1 1 260px;
+}
+.ppws-doc-chosen {
+  align-self: center;
+  color: var(--ppws-muted);
+  font-size: 0.9rem;
+}
 /* Document viewer (2026-11-22): clicking a document views it. */
 .ppws-doc-title-btn {
   background: none;
