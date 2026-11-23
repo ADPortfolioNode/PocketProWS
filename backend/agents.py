@@ -124,41 +124,60 @@ def run_search_agent(profile_id: str, connectors=None, limit: int = 5) -> dict:
                   "counts": {}, "new_jobs": 0, "total_found": 0,
                   "integrity": check_search_integrity(profile)}
         return _record_run(profile_id, report)
-    query = roles[0]
     location = client.get("location") or ""
     connectors = connectors if connectors is not None else _free_connectors()
-    counts, total, new_jobs = {}, 0, []
+    counts, total, candidates = {}, 0, []
     profiles = profiles_mod._load()
     p = profiles.get(profile_id)
     seen = {j["id"] for j in p["saved_jobs"]}
+    # Search EVERY target role, not just the first — a client with
+    # several target roles was only ever searched on roles[0].
     for c in connectors:
-        try:
-            r = c.search(query, location, limit)
-        except Exception as exc:  # noqa: BLE001 - one bad source must not kill the run
-            r = SearchResult(source=c.name, status="error", jobs=[],
-                             message=str(exc))
-        counts[c.name] = {"status": r.status, "found": len(r.jobs),
-                          "message": r.message}
-        total += len(r.jobs)
-        for job in r.jobs:
-            job = job.as_dict() if hasattr(job, "as_dict") else dict(job)
-            if job["id"] not in seen:
-                _ensure_job_status(job)
-                p["saved_jobs"].append(job)
-                new_jobs.append(job)
-                seen.add(job["id"])
+        for query in roles:
+            try:
+                r = c.search(query, location, limit)
+            except Exception as exc:  # noqa: BLE001 - one bad source must not kill the run
+                r = SearchResult(source=c.name, status="error", jobs=[],
+                                 message=str(exc))
+            entry = counts.setdefault(c.name, {"status": r.status, "found": 0,
+                                               "message": r.message})
+            if r.status == "ok":
+                entry["status"] = "ok"
+            entry["found"] += len(r.jobs)
+            entry["message"] = r.message
+            total += len(r.jobs)
+            for job in r.jobs:
+                job = job.as_dict() if hasattr(job, "as_dict") else dict(job)
+                if job["id"] not in seen:
+                    candidates.append(job)
+                    seen.add(job["id"])
+    # Same disqualifier the manual search applies (PR #21): postings
+    # whose stated requirements this client's record provably fails
+    # are omitted and reported — the agent must not save what the
+    # manual search would have omitted.
+    from . import disqualify as dq_mod
+    new_jobs, omitted = dq_mod.filter_jobs(client, candidates)
+    for job in new_jobs:
+        _ensure_job_status(job)
+        p["saved_jobs"].append(job)
     if new_jobs:
         vs.upsert_jobs(new_jobs)
     profiles_mod._save(profiles)
     ok = [n for n, c in counts.items() if c["status"] == "ok"]
+    roles_txt = ", ".join(f"'{r}'" for r in roles)
+    summary = (f"Searched {roles_txt} across {len(connectors)} sources: "
+               f"{total} jobs found, {len(new_jobs)} new saved "
+               f"for {client.get('name') or profile_id}. "
+               f"Working sources: {', '.join(ok) or 'none'}.")
+    if omitted:
+        summary += (f" {len(omitted)} posting(s) omitted — stated "
+                    f"requirements this client's record does not meet.")
     report = {"agent": "search", "ran_at": _now_iso(), "profile_id": profile_id,
-              "query": query, "location": location,
-              "summary": (f"Searched '{query}' across {len(connectors)} sources: "
-                          f"{total} jobs found, {len(new_jobs)} new saved "
-                          f"for {client.get('name') or profile_id}. "
-                          f"Working sources: {', '.join(ok) or 'none'}."),
+              "query": roles[0], "queries": roles, "location": location,
+              "summary": summary,
               "counts": counts, "new_jobs": len(new_jobs), "total_found": total,
               "new_job_titles": [j.get("title", "") for j in new_jobs],
+              "omitted": omitted, "omitted_count": len(omitted),
               "integrity": check_search_integrity(profiles_mod.get_profile(profile_id))}
     return _record_run(profile_id, report)
 
@@ -242,9 +261,14 @@ def run_follow_up_agent(profile_id: str, days: int = DEFAULT_FOLLOW_UP_DAYS) -> 
         return {"agent": "follow_up", "ran_at": _now_iso(), "profile_id": profile_id,
                 "error": "profile not found"}
     due = follow_up_due(p, days=days)
+    # follow_up_due returns copies ({**job, "draft": ...}) — write the
+    # draft onto the REAL saved jobs, or it never persists.
+    by_id = {j.get("id"): j for j in p["saved_jobs"]}
     for job in due:
-        _ensure_job_status(job)
-        job["follow_up_draft"] = _draft_follow_up(p, job)
+        real = by_id.get(job["id"])
+        if real is not None:
+            _ensure_job_status(real)
+            real["follow_up_draft"] = _draft_follow_up(p, real)
     profiles_mod._save(profiles)
     report = {"agent": "follow_up", "ran_at": _now_iso(), "profile_id": profile_id,
               "follow_up_days": days,
@@ -257,22 +281,27 @@ def run_follow_up_agent(profile_id: str, days: int = DEFAULT_FOLLOW_UP_DAYS) -> 
                        "company": j.get("company", ""),
                        "status": _job_status(j),
                        "last_status_at": j.get("last_status_at"),
-                       "draft": j.get("follow_up_draft", "")} for j in due],
+                       "draft": (by_id.get(j["id"]) or {}).get(
+                           "follow_up_draft") or j.get("draft", "")}
+                      for j in due],
               "integrity": check_follow_up_integrity(profiles_mod.get_profile(profile_id))}
     return _record_run(profile_id, report)
 
 
 # ----------------------------------------------------------- resource agent
-def run_resource_agent(profile_id: str) -> dict:
-    """Check this profile's documents: exists, digested, RAG entry present."""
-    profile = profiles_mod.get_profile(profile_id)
-    if not profile:
-        return {"agent": "resource", "ran_at": _now_iso(), "profile_id": profile_id,
-                "error": "profile not found"}
+def _resource_snapshot(profile: dict) -> dict:
+    """Read-only resource check for one profile: per-document health
+    plus the chunk counts behind it. No run is recorded and nothing
+    is saved — profile_status() reads through this too, so a status
+    read no longer writes (it previously ran the agent, then loaded
+    and re-saved the whole store to undo the recorded run)."""
+    profile_id = profile["id"]
     docs = profile.get("documents") or []
     checked = []
+    chunk_counts = {}
     for doc in docs:
         chunks = vs.count_profile_chunks(profile_id, doc["id"])
+        chunk_counts[doc["id"]] = chunks
         digest = doc.get("digest") or {}
         problems = []
         if not doc.get("text_chars"):
@@ -290,8 +319,25 @@ def run_resource_agent(profile_id: str) -> dict:
                         "rag_chunks": chunks,
                         "status": "ok" if not problems else "needs attention",
                         "problems": problems})
-    interview_notes = vs.count_profile_chunks(profile_id, None, kind="interview")
-    ok = sum(1 for d in checked if d["status"] == "ok")
+    return {"documents": checked,
+            "document_count": len(docs),
+            "healthy_count": sum(1 for d in checked if d["status"] == "ok"),
+            "interview_notes_in_rag": vs.count_profile_chunks(
+                profile_id, None, kind="interview"),
+            "chunk_counts": chunk_counts}
+
+
+def run_resource_agent(profile_id: str) -> dict:
+    """Check this profile's documents: exists, digested, RAG entry present."""
+    profile = profiles_mod.get_profile(profile_id)
+    if not profile:
+        return {"agent": "resource", "ran_at": _now_iso(), "profile_id": profile_id,
+                "error": "profile not found"}
+    snap = _resource_snapshot(profile)
+    docs = profile.get("documents") or []
+    checked = snap["documents"]
+    interview_notes = snap["interview_notes_in_rag"]
+    ok = snap["healthy_count"]
     report = {"agent": "resource", "ran_at": _now_iso(), "profile_id": profile_id,
               "summary": (f"{len(docs)} document(s) on file, {ok} healthy; "
                           f"{interview_notes} interview note(s) in RAG."
@@ -400,16 +446,19 @@ def check_follow_up_integrity(profile: dict) -> dict:
     return {"agent": "follow_up", "passed": not problems, "problems": problems}
 
 
-def check_resource_integrity(profile: dict) -> dict:
+def check_resource_integrity(profile: dict, chunk_counts: dict = None) -> dict:
     """Documents, digests, and RAG chunks agree: a document listed as
     healthy actually has a digest + chunks, and nothing is indexed in RAG
-    for a deleted document."""
+    for a deleted document. chunk_counts may carry counts already
+    gathered by _resource_snapshot so a status read counts once."""
     problems = []
     pid = profile["id"]
     docs = profile.get("documents") or []
     doc_ids = {d["id"] for d in docs}
     for doc in docs:
-        chunks = vs.count_profile_chunks(pid, doc["id"])
+        chunks = (chunk_counts or {}).get(doc["id"])
+        if chunks is None:
+            chunks = vs.count_profile_chunks(pid, doc["id"])
         digest = doc.get("digest") or {}
         if doc.get("text_chars") and chunks == 0:
             problems.append(f"document {doc['id']} ({doc.get('title', '')}): "
@@ -430,16 +479,19 @@ def check_resource_integrity(profile: dict) -> dict:
     return {"agent": "resource", "passed": not problems, "problems": problems}
 
 
-def check_workflow_integrity(profile_id: str) -> dict:
-    """Overall integrity summary for one profile, across all four agents."""
-    profile = profiles_mod.get_profile(profile_id)
+def check_workflow_integrity(profile_id: str, profile: dict = None,
+                             chunk_counts: dict = None) -> dict:
+    """Overall integrity summary for one profile, across all four agents.
+    Callers that already hold the profile (and chunk counts) pass them
+    in instead of paying for another full store load."""
+    profile = profile or profiles_mod.get_profile(profile_id)
     if not profile:
         return {"passed": False, "problems": ["profile not found"], "by_agent": {}}
     by_agent = {
         "search": check_search_integrity(profile),
         "application": check_application_integrity(profile),
         "follow_up": check_follow_up_integrity(profile),
-        "resource": check_resource_integrity(profile),
+        "resource": check_resource_integrity(profile, chunk_counts=chunk_counts),
     }
     problems = [p for r in by_agent.values() for p in r["problems"]]
     return {"passed": not problems, "problems": problems, "by_agent": by_agent}
@@ -492,16 +544,8 @@ def profile_status(profile_id: str, follow_up_days: int = DEFAULT_FOLLOW_UP_DAYS
     if not profile:
         return {"error": "profile not found"}
     due = follow_up_due(profile, days=follow_up_days)
-    resource = run_resource_agent(profile_id)
-    # run_resource_agent records a run; keep the status read side-effect
-    # light by dropping that duplicate run back off the stored list.
-    profiles = profiles_mod._load()
-    p = profiles.get(profile_id)
-    if p and p.get("agent_runs"):
-        p["agent_runs"] = [r for r in p["agent_runs"]
-                           if not (r.get("agent") == "resource"
-                                   and r.get("ran_at") == resource["ran_at"])][:MAX_AGENT_RUNS_KEPT]
-        profiles_mod._save(profiles)
+    # Read-only snapshot: a status read must not record runs or save.
+    resource = _resource_snapshot(profile)
     workflow = profiles_mod.workflow_state(profile)
     return {"profile_id": profile_id,
             "client_name": profile["client"].get("name") or "",
@@ -516,7 +560,9 @@ def profile_status(profile_id: str, follow_up_days: int = DEFAULT_FOLLOW_UP_DAYS
                                 "last_status_at": j.get("last_status_at"),
                                 "draft": j.get("draft") or j.get("follow_up_draft", "")} for j in due],
             "follow_up_days": follow_up_days,
-            "integrity": check_workflow_integrity(profile_id),
+            "integrity": check_workflow_integrity(
+                profile_id, profile=profile,
+                chunk_counts=resource["chunk_counts"]),
             "resources": {"document_count": resource["document_count"],
                           "healthy_count": resource["healthy_count"],
                           "interview_notes_in_rag": resource["interview_notes_in_rag"],
