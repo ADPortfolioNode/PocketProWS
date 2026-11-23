@@ -178,8 +178,11 @@ email step — compose (recipient, subject, the letter as the body, one
 document attached), then a review screen naming exactly what will be
 sent, and only that screen's **Approve and send** sends. The backend
 requires the same explicit approval, records the send on the pack,
-and moves the job to Applied. Employer web forms are still never
-touched. Settings live in the local `.env` (never in code or chat):
+and moves the job to Applied. The concierge — the admin of the
+structure — can run the same send from the conversation: tell it
+"email the application to …" and it shows the same review in chat,
+sends only on your "send it", and cancels on "cancel". Employer web
+forms are still never touched. Settings live in the local `.env` (never in code or chat):
 `POCKETPROWS_SMTP_HOST`, `POCKETPROWS_SMTP_PORT` (default 587),
 `POCKETPROWS_SMTP_USER`, `POCKETPROWS_SMTP_PASSWORD` (a mailbox
 **app password**, not the account password), and optional

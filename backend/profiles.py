@@ -291,6 +291,30 @@ def clear_chat(profile_id: str) -> bool:
     return True
 
 
+def get_pending_email(profile_id: str):
+    """The concierge's in-flight email action for this profile (a pack
+    send being composed / awaiting the client's approval), or None.
+    The concierge is the admin of the structure: a send it prepares
+    waits here until the client approves or cancels it in chat."""
+    p = get_profile(profile_id)
+    if not p:
+        return None
+    return p.get("pending_email") or None
+
+
+def set_pending_email(profile_id: str, pending):
+    profiles = _load()
+    p = profiles.get(profile_id)
+    if not p:
+        return None
+    if pending:
+        p["pending_email"] = pending
+    else:
+        p.pop("pending_email", None)
+    _save(profiles)
+    return pending
+
+
 # The concierge greets first (Anthony, 2026-11-22): an empty
 # conversation opens with his greeting — who he is, where this client
 # stands in the workflow, and a question he expects an answer to.

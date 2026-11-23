@@ -18,6 +18,13 @@ empty conversation (profiles.ensure_greeting). Two modes:
   match. Without a profile selected, it answers from saved jobs only and
   says so — it never mixes one profile's data into another's answers.
 
+The concierge is the ADMIN of the structure (Anthony, 2026-11-23):
+the workflow agents report to it, the client directs it, and
+client-approved actions run through it — including emailing a
+finished apply pack: the concierge prepares the send, shows the
+exact message, and sends only on the client's approval in the
+conversation ("send it"), recording the send on the pack.
+
 Helpful and verbose, for transparency (Anthony, 2026-11-22): the
 concierge teaches the workflow while it works it — a guide intent
 ("explain my workflow", "what do I do next") returns the full
@@ -70,7 +77,7 @@ STEP_GUIDE = [
     ("interview", "Interview — eleven short questions, one at a time, in the Concierge panel. They turn the resume into a person: target roles, current role, work history, where they're based, remote or on-site, full-time or contract, salary aim, and what cover letters should highlight. Skills are never typed here — they're confirmed from the resume."),
     ("preferences", "Preferences — the interview answers become the search settings. Every search from here on runs on what this client actually wants, not generic keywords."),
     ("job_search", "Job search — six boards (Adzuna, Jooble, USAJOBS, Remotive, RemoteOK, Arbeitnow) searched with those preferences. Postings whose stated requirements would disqualify the client — a degree above theirs, a certification they don't hold, a required clearance — are omitted and reported with reasons. The rest are saved to the profile."),
-    ("applications", "Applications — every saved job can get an apply pack: a fit check against the resume, a cover letter written for that employer, and draft answers to the standard questions. You review everything and submit it yourself — nothing is ever sent automatically. Statuses move saved → applied → interviewing → offer → hired as things progress."),
+    ("applications", "Applications — every saved job can get an apply pack: a fit check against the resume, a cover letter written for that employer, and draft answers to the standard questions. You review everything and submit it yourself — or tell me to email the pack: I'll show you the exact message first and send only when you approve it here — nothing is ever sent automatically. Statuses move saved → applied → interviewing → offer → hired as things progress."),
     ("follow_up", "Follow-up — an application that goes quiet gets a follow-up draft before it goes cold. I flag what's due and have the note written; you send it."),
 ]
 
@@ -133,7 +140,167 @@ def answer(question: str, profile_id: str = "", mode: str = "") -> dict:
     return res
 
 
+_APPROVE_WORDS = {"send it", "send", "approve", "approved", "yes",
+                  "yes send it", "send now", "go ahead", "confirm"}
+_CANCEL_WORDS = {"cancel", "don't send", "dont send", "no",
+                 "never mind", "nevermind", "stop", "cancel it"}
+
+
+def _review_text(pending: dict, profile: dict) -> str:
+    job = next((j for j in profile.get("saved_jobs") or []
+                if j.get("id") == pending.get("job_id")), {})
+    docs = profile.get("documents") or []
+    attach = next((d for d in docs if d["id"] == pending.get("document_id")),
+                  None)
+    attach_name = (attach or {}).get("filename") or "none"
+    return (f"Ready to email the application for {job.get('title', '')} "
+            f"at {job.get('company', '')}:\n"
+            f"To: {pending.get('to')}\n"
+            f"Subject: {pending.get('subject')}\n"
+            f"Attachment: {attach_name}\n"
+            "The body is the pack's cover letter, exactly as built. "
+            "Reply 'send it' to approve this send — or 'cancel', and "
+            "nothing is sent.")
+
+
+def _email_turn(q: str, profile_id: str):
+    """The concierge administering an email send, or None when the
+    message is not about email. A prepared send waits on the profile
+    (pending_email) and holds the floor until the client approves it
+    ('send it') or cancels — the same approval rule as the pack
+    panel's review screen, in the conversation."""
+    from . import apply_pack as pack_mod
+    from . import mailer as mailer_mod
+    profile = profiles_mod.get_profile(profile_id)
+    if not profile:
+        return None
+    lower = q.lower().strip()
+    pending = profiles_mod.get_pending_email(profile_id)
+    if pending:
+        if lower in _CANCEL_WORDS or lower.startswith("cancel"):
+            profiles_mod.set_pending_email(profile_id, None)
+            return {"answer": "Cancelled — nothing was sent. The pack "
+                              "stays on the job whenever you're ready.",
+                    "jobs": [], "mode": "email"}
+        if pending.get("stage") == "approve":
+            if lower in _APPROVE_WORDS:
+                res = pack_mod.email_pack(
+                    profile_id, pending["job_id"], pending.get("to") or "",
+                    pending.get("subject", ""), "",
+                    pending.get("document_id"))
+                profiles_mod.set_pending_email(profile_id, None)
+                if "error" in res:
+                    return {"answer": f"Not sent: {res['error']}",
+                            "jobs": [], "mode": "email"}
+                rec = res["emailed"]
+                return {"answer": f"Sent — the application was emailed "
+                                  f"to {rec['to']} from {rec['from']}, "
+                                  f"and the job is now marked Applied. "
+                                  f"The send is recorded on the pack.",
+                        "jobs": [], "mode": "email"}
+            return {"answer": "A send is waiting for your word:\n"
+                              + _review_text(pending, profile),
+                    "jobs": [], "mode": "email"}
+        if pending.get("stage") == "address":
+            addr = re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", q)
+            if not addr:
+                return {"answer": "What email address should I send it "
+                                  "to? Reply with the address — or "
+                                  "'cancel'.",
+                        "jobs": [], "mode": "email"}
+            pending = {**pending, "to": addr.group(0), "stage": "approve"}
+            profiles_mod.set_pending_email(profile_id, pending)
+            return {"answer": _review_text(pending, profile),
+                    "jobs": [], "mode": "email"}
+        if pending.get("stage") == "job":
+            cands = pending.get("candidates") or []
+            pick = None
+            if lower.isdigit() and 1 <= int(lower) <= len(cands):
+                pick = cands[int(lower) - 1]
+            else:
+                pick = next((c for c in cands
+                             if c["title"].lower() in lower
+                             or lower in c["title"].lower()), None)
+            if not pick:
+                listing = "\n".join(
+                    f"{i}. {c['title']} at {c['company']}"
+                    for i, c in enumerate(cands, 1))
+                return {"answer": f"Which one? Reply with the number:\n{listing}",
+                        "jobs": [], "mode": "email"}
+            client_name = profile["client"].get("name") or "the client"
+            pending = {"job_id": pick["id"], "to": pending.get("to"),
+                       "stage": "approve" if pending.get("to") else "address",
+                       "subject": f"Application for {pick['title']} — {client_name}",
+                       "document_id": pending.get("document_id")}
+            profiles_mod.set_pending_email(profile_id, pending)
+            if pending["stage"] == "address":
+                return {"answer": f"{pick['title']} at {pick['company']} "
+                                  f"— what email address should I send "
+                                  f"it to?",
+                        "jobs": [], "mode": "email"}
+            fresh = profiles_mod.get_profile(profile_id) or profile
+            return {"answer": _review_text(pending, fresh),
+                    "jobs": [], "mode": "email"}
+    addr = re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", q)
+    wants_email = (("email" in lower
+                    and ("application" in lower or "pack" in lower
+                         or addr is not None))
+                   or ("send" in lower
+                       and ("application" in lower or "pack" in lower)))
+    if not wants_email:
+        return None
+    st = mailer_mod.status()
+    if not st["configured"]:
+        return {"answer": "I can't email yet — email isn't configured. "
+                          "Add " + ", ".join(st["missing"])
+                          + " to the app's .env and restart, and I'll "
+                            "send packs from here, on your approval.",
+                "jobs": [], "mode": "email"}
+    cands = [j for j in profile.get("saved_jobs") or [] if j.get("apply_pack")]
+    if not cands:
+        return {"answer": "There's no apply pack ready to email yet. "
+                          "Build one first — Agents panel, open a saved "
+                          "job, Apply pack — then tell me to email it.",
+                "jobs": [], "mode": "email"}
+    docs = profile.get("documents") or []
+    doc_id = docs[0]["id"] if docs else None
+    named = next((c for c in cands if c.get("title", "").lower() in lower),
+                 None)
+    if len(cands) > 1 and named is None:
+        listing = "\n".join(f"{i}. {c.get('title', '')} at {c.get('company', '')}"
+                            for i, c in enumerate(cands, 1))
+        profiles_mod.set_pending_email(profile_id, {
+            "stage": "job", "to": addr.group(0) if addr else None,
+            "candidates": [{"id": c["id"], "title": c.get("title", ""),
+                            "company": c.get("company", "")} for c in cands],
+            "document_id": doc_id})
+        return {"answer": f"More than one pack is ready. Which "
+                          f"application should I email?\n{listing}",
+                "jobs": [], "mode": "email"}
+    job = named or cands[0]
+    client_name = profile["client"].get("name") or "the client"
+    pending = {"stage": "approve" if addr else "address",
+               "job_id": job["id"],
+               "to": addr.group(0) if addr else None,
+               "subject": f"Application for {job.get('title', 'the role')} — {client_name}",
+               "document_id": doc_id}
+    profiles_mod.set_pending_email(profile_id, pending)
+    if not addr:
+        return {"answer": f"The pack for {job.get('title', '')} at "
+                          f"{job.get('company', '')} is ready. What "
+                          f"email address should I send it to?",
+                "jobs": [], "mode": "email"}
+    return {"answer": _review_text(pending, profile),
+            "jobs": [], "mode": "email"}
+
+
 def _answer_once(q: str, profile_id: str = "", mode: str = "", history=None) -> dict:
+    # The concierge is the admin: an email it prepared (or a new email
+    # request) is handled before anything else in the turn.
+    if profile_id and q and mode != "interview":
+        email_res = _email_turn(q, profile_id)
+        if email_res is not None:
+            return email_res
     # Status questions go to the workflow agents' live status — real
     # numbers for the active profile, no LLM key needed.
     if profile_id and q and _is_status_question(q):
