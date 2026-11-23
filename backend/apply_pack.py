@@ -8,7 +8,14 @@ certifications, interview preferences, cover-letter highlights/tone):
   and which it does not — computed by matching, never invented;
 - a COVER LETTER: written by the LLM chain when a key is configured
   (backend/llm.py), otherwise a deterministic template built from the
-  same facts. The pack says which provider wrote it;
+  same facts. The pack says which provider wrote it. The LM then
+  CHECKS the letter against the record (Anthony, 2026-11-22) for
+  stupidity — invented facts, wrong names or contact details,
+  placeholders, contradictions — and for regression — the letter
+  falling short of the record (matched skills or certifications
+  omitted, requested highlights dropped, the role understated).
+  Issues trigger one correction pass and a re-check; the pack
+  carries the verdict either way;
 - DRAFT ANSWERS to the standard application questions, built only
   from facts on the profile (no invented credentials, no legal
   attestations — those stay the client's to answer).
@@ -175,6 +182,110 @@ def _lm_prompt(client: dict, job: dict, fit: dict) -> str:
     )
 
 
+def _facts_block(client: dict, job: dict, fit: dict) -> str:
+    """The ground truth a letter is checked against — the same facts
+    the letter was built from, nothing else."""
+    return (
+        f"Applicant: {client.get('name', '')}\n"
+        f"Current role: {client.get('current_role', '')}\n"
+        f"Skills on resume: {', '.join(client.get('skills') or [])}\n"
+        f"Certifications: {', '.join(_certs(client))}\n"
+        f"Education: {', '.join(client.get('education') or [])}\n"
+        f"Highlights the applicant asked to include: {client.get('cover_letter_highlights', '')}\n"
+        f"Contact on record — email: {client.get('email', '')} · phone: {client.get('phone', '')}\n"
+        f"Job: {job.get('title', '')} at {job.get('company', '')} ({job.get('location', '')})\n"
+        f"Skills the posting names that the resume MATCHES: {', '.join(fit['matched'])}\n"
+        f"Skills the posting names that the resume does NOT have: {', '.join(fit['missing'])}")
+
+
+def _verify_prompt(client: dict, job: dict, fit: dict, letter: str) -> str:
+    return (
+        "Check this cover letter against the applicant's record. Two "
+        "failure classes:\n"
+        "STUPIDITY — anything in the letter that is wrong: a fact, skill, "
+        "certification, employer or date not in the record; a wrong name "
+        "(applicant, employer, job title); contact details that differ "
+        "from the record; claiming a skill listed as NOT on the resume; "
+        "leftover placeholders or bracketed text; contradictions; "
+        "garbled, duplicated or nonsensical sentences.\n"
+        "REGRESSION — the letter falling short of the record: a matched "
+        "skill the posting names is omitted; a certification on file is "
+        "omitted; the applicant's requested highlights are dropped; the "
+        "current role or experience is understated; generic filler where "
+        "the record is specific.\n\n"
+        "Reply with EXACTLY this shape: the first line is 'VERDICT: PASS' "
+        "or 'VERDICT: ISSUES'. If ISSUES, follow with one line per issue, "
+        "each starting '- [stupidity] ' or '- [regression] ', naming the "
+        "problem precisely. No other text.\n\n"
+        f"THE RECORD:\n{_facts_block(client, job, fit)}\n\n"
+        f"THE LETTER:\n{letter}")
+
+
+def _parse_verdict(text: str):
+    """(verdict, issues) from the LM's reply, or None when the reply
+    does not follow the verdict shape."""
+    if not text:
+        return None
+    lines = [ln.strip() for ln in text.strip().splitlines() if ln.strip()]
+    if not lines or not lines[0].upper().startswith("VERDICT:"):
+        return None
+    verdict = "pass" if "PASS" in lines[0].upper() else "issues"
+    issues = [ln[2:].strip() for ln in lines[1:] if ln.startswith("- ")]
+    if verdict == "issues" and not issues:
+        issues = ["the LM flagged issues but did not itemize them"]
+    return verdict, issues
+
+
+def _revise_prompt(client: dict, job: dict, fit: dict, letter: str, issues: list) -> str:
+    return (
+        "Revise this cover letter so every problem below is fixed. Use "
+        "ONLY the facts in the record — do not invent experience, "
+        "employers, or credentials, and do not add claims to replace the "
+        "ones removed. Keep it 250-350 words, plain text, no markdown, "
+        "signed with the applicant's name and the contact line from the "
+        "record.\n\n"
+        f"PROBLEMS TO FIX:\n" + "\n".join(f"- {i}" for i in issues) +
+        f"\n\nTHE RECORD:\n{_facts_block(client, job, fit)}\n\n"
+        f"THE LETTER:\n{letter}")
+
+
+def check_letter(client: dict, job: dict, fit: dict, letter: str):
+    """The LM verifies the letter for stupidity and regression
+    (Anthony, 2026-11-22). Returns (letter, check): on flagged issues
+    the letter gets ONE correction pass and is re-checked; the check
+    reports the final verdict either way. When no LM rung answers,
+    the letter ships unchecked and the check says so."""
+    gen = llm.generate(_verify_prompt(client, job, fit, letter))
+    if not gen["text"]:
+        reason = next(iter(gen["errors"].values()), "no LM rung answered")
+        return letter, {"checked": False, "reason": reason}
+    parsed = _parse_verdict(gen["text"])
+    if parsed is None:
+        return letter, {"checked": False,
+                        "reason": "the LM's verdict could not be read"}
+    verdict, issues = parsed
+    check = {"checked": True, "provider": gen["provider"],
+             "verdict": verdict, "issues": issues, "revised": False}
+    if verdict == "pass":
+        return letter, check
+    rev = llm.generate(_revise_prompt(client, job, fit, letter, issues))
+    if not rev["text"]:
+        return letter, check
+    letter2 = rev["text"]
+    gen2 = llm.generate(_verify_prompt(client, job, fit, letter2))
+    parsed2 = _parse_verdict(gen2["text"]) if gen2["text"] else None
+    check["revised"] = True
+    if parsed2 is None:
+        check["note"] = ("the letter above is the corrected version; "
+                         "the re-check could not be completed")
+        return letter2, check
+    verdict2, issues2 = parsed2
+    check.update({"verdict": verdict2, "issues": issues2,
+                  "provider": gen2["provider"] or check["provider"],
+                  "first_issues": issues})
+    return letter2, check
+
+
 def build_pack(client: dict, job: dict) -> dict:
     fit = fit_for(client, job)
     gen = llm.generate(_lm_prompt(client, job, fit))
@@ -182,11 +293,13 @@ def build_pack(client: dict, job: dict) -> dict:
         letter, provider = gen["text"], gen["provider"]
     else:
         letter, provider = template_letter(client, job, fit), "template"
+    letter, letter_check = check_letter(client, job, fit, letter)
     return {"job_id": job.get("id", ""), "title": job.get("title", ""),
             "company": job.get("company", ""), "url": job.get("url", ""),
             "fit": fit, "cover_letter": letter,
             "answers": template_answers(client, job, fit),
             "provider": provider,
+            "letter_check": letter_check,
             "llm_errors": gen["errors"] if not gen["text"] else {},
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "note": "Preparation only — review everything, then open the "

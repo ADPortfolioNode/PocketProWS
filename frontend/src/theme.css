@@ -571,6 +571,17 @@ body {
   color: var(--ppws-muted);
   font-size: 0.88rem;
 }
+.ppws-pack-check {
+  color: var(--ppws-muted);
+  font-size: 0.88rem;
+}
+.ppws-pack-check.is-flagged {
+  color: var(--ppws-ink);
+  background: var(--ppws-accent-soft);
+  border-left: 3px solid var(--ppws-accent);
+  border-radius: 0.4rem;
+  padding: 0.45rem 0.7rem;
+}
 .ppws-pack-letter {
   padding: 0.7rem 0.8rem;
   background-color: var(--ppws-card);
