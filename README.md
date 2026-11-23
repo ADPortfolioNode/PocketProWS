@@ -88,6 +88,17 @@ an interview answer is saved, and re-loads every profile-scoped panel
 client name is hard-coded in the UI. The first profile created becomes
 active; deleting the active profile clears it.
 
+**Edit profile.** The hero's Active profile card has an **Edit profile**
+form for the client's own facts — name, current role, target roles,
+location, remote/employment preferences, salary expectations, cover
+letter tone and highlights, email, phone, LinkedIn, GitHub — saved via
+`PATCH /api/profiles/{id}`. This is where a wrong fact on file (a phone
+number the resume digest misread, say) gets corrected, so everything
+built from the record — cover letters, draft answers, the LM letter
+check — uses the corrected fact. Skills, certifications and education
+are NOT editable there: they come from the client's documents, and
+change only by replacing or re-digesting a document.
+
 The concierge interviews one question at a time (11 questions, identity
 first), saves each answer, and confirms what it saved. Documents are
 digested on upload/replace (TXT/MD, DOCX, PDF best-effort): skills,

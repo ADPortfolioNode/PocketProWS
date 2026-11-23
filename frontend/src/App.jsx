@@ -87,6 +87,9 @@ export default function App() {
   const [profiles, setProfiles] = useState([]);
   const [activeId, setActiveId] = useState("");
   const [header, setHeader] = useState(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState(null);
+  const [editBusy, setEditBusy] = useState(false);
   const [active, setActive] = useState(null);
   const [newName, setNewName] = useState("");
   const [profileMsg, setProfileMsg] = useState("");
@@ -139,6 +142,39 @@ export default function App() {
     setHeader(r.header);
     if (r.active_profile_id) setActiveId(r.active_profile_id);
     return r;
+  };
+
+  // Edit profile: the client's own facts (contact, roles, preferences,
+  // cover-letter settings) — corrected here when the record is wrong.
+  // Skills, certifications and education stay document-derived and are
+  // NOT editable here, by design.
+  const openEditProfile = () => {
+    const c = active?.client || {};
+    setEditForm({
+      name: c.name || "", current_role: c.current_role || "",
+      target_roles: (c.target_roles || []).join(", "),
+      location: c.location || "", remote_preference: c.remote_preference || "",
+      employment_type: c.employment_type || "", salary_text: c.salary_text || "",
+      cover_letter_tone: c.cover_letter_tone || "",
+      cover_letter_highlights: c.cover_letter_highlights || "",
+      email: c.email || "", phone: c.phone || "",
+      linkedin: c.linkedin || "", github: c.github || "",
+    });
+    setEditOpen(true);
+  };
+
+  const saveEditProfile = async () => {
+    if (!activeId || !editForm) return;
+    setEditBusy(true);
+    const { name, target_roles, ...rest } = editForm;
+    const clientPatch = { ...rest,
+      target_roles: target_roles.split(",").map((s) => s.trim()).filter(Boolean) };
+    await fetch(`/api/profiles/${activeId}`, { method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, client: clientPatch }) }).catch(() => null);
+    setEditBusy(false);
+    setEditOpen(false);
+    await loadActive(activeId);
   };
 
   const loadActive = async (id) => {
@@ -427,6 +463,26 @@ export default function App() {
                       {header.employment_type ? ` · ${header.employment_type}` : ""}
                       {header.current_step ? ` · Workflow: ${WORKFLOW_LABELS[header.current_step] || header.current_step}` : ""}
                     </p>
+                  )}
+                  {activeId && active?.client && !editOpen && (
+                    <button className="btn btn-sm btn-outline-light mt-2" onClick={openEditProfile}>Edit profile</button>
+                  )}
+                  {editOpen && editForm && (
+                    <div className="ppws-edit-form">
+                      {[["name", "Name"], ["current_role", "Current role"], ["target_roles", "Target roles (comma separated)"], ["location", "Location"], ["remote_preference", "Remote preference"], ["employment_type", "Employment type"], ["salary_text", "Salary expectations"], ["cover_letter_tone", "Cover letter tone"], ["email", "Email"], ["phone", "Phone"], ["linkedin", "LinkedIn"], ["github", "GitHub"]].map(([key, label]) => (
+                        <label key={key} className="ppws-edit-field">{label}
+                          <input className="form-control form-control-sm" value={editForm[key]} onChange={(e) => setEditForm({ ...editForm, [key]: e.target.value })} />
+                        </label>
+                      ))}
+                      <label className="ppws-edit-field">Cover letter highlights
+                        <textarea className="form-control form-control-sm" rows={3} value={editForm.cover_letter_highlights} onChange={(e) => setEditForm({ ...editForm, cover_letter_highlights: e.target.value })} />
+                      </label>
+                      <p className="ppws-edit-note">Skills, certifications and education come from the client's documents — replace or re-digest a document to change those.</p>
+                      <div className="d-flex gap-2">
+                        <button className="btn btn-sm ppws-btn-accent" disabled={editBusy} onClick={saveEditProfile}>{editBusy ? "Saving…" : "Save profile"}</button>
+                        <button className="btn btn-sm btn-outline-light" onClick={() => setEditOpen(false)}>Cancel</button>
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>

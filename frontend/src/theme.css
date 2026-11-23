@@ -582,6 +582,23 @@ body {
   border-radius: 0.4rem;
   padding: 0.45rem 0.7rem;
 }
+.ppws-edit-form {
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.5rem;
+  text-align: left;
+}
+.ppws-edit-field {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.85rem;
+  color: #fff;
+}
+.ppws-edit-note {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.75);
+  margin: 0.25rem 0;
+}
 .ppws-pack-letter {
   padding: 0.7rem 0.8rem;
   background-color: var(--ppws-card);
