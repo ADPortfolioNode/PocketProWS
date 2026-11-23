@@ -20,10 +20,13 @@ certifications, interview preferences, cover-letter highlights/tone):
   from facts on the profile (no invented credentials, no legal
   attestations — those stay the client's to answer).
 
-Nothing is ever submitted: the pack is preparation. The client reads
-it, opens the employer's posting, pastes, and submits themselves —
-applying stays human by design (see backend/agents.py).
+Nothing is ever submitted to an employer's site: the pack is
+preparation. The client reads it and submits themselves — or directs
+the app to email it (email_pack below): one message, to a recipient
+they name, only after their explicit approval for that send.
+Applying on web forms stays human by design (see backend/agents.py).
 """
+import re
 from datetime import datetime, timezone
 
 from . import llm
@@ -333,3 +336,73 @@ def get_pack(profile_id: str, job_id: str) -> dict:
     if not job:
         return {"error": "saved job not found"}
     return {"profile_id": profile_id, "apply_pack": job.get("apply_pack")}
+
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def email_pack(profile_id: str, job_id: str, to: str, subject: str = "",
+               body: str = "", document_id: str = None) -> dict:
+    """Send a built pack by email — the shared send path behind both
+    the API endpoint (the pack panel's review screen) and the
+    concierge (the admin of the structure, acting on the client's
+    approval in chat). Callers gate the send on that approval BEFORE
+    calling; this function validates, sends, records the send on the
+    pack, and moves a still-'saved' job to 'applied'. Errors return
+    {"error": ..., "http": <status>} with the real reason."""
+    from . import mailer as mailer_mod
+    p = profiles_mod.get_profile(profile_id)
+    if not p:
+        return {"error": "profile not found", "http": 404}
+    job = next((j for j in p.get("saved_jobs") or []
+                if j.get("id") == job_id), None)
+    if not job:
+        return {"error": "job not found in this profile's saved jobs",
+                "http": 404}
+    pack = job.get("apply_pack")
+    if not pack:
+        return {"error": "build the apply pack first — the email sends "
+                         "the pack's cover letter", "http": 400}
+    to = (to or "").strip()
+    if not _EMAIL_RE.match(to):
+        return {"error": f"'{to}' does not look like an email address",
+                "http": 400}
+    client_name = p["client"].get("name") or "the client"
+    subject = (subject or "").strip() or (
+        f"Application for {job.get('title', 'the role')} — {client_name}")
+    body = (body or "").strip() or pack.get("cover_letter", "")
+    if not body:
+        return {"error": "the email body is empty", "http": 400}
+    attachment = None
+    if document_id:
+        info = profiles_mod.document_file(profile_id, document_id)
+        if "error" in info:
+            return {"error": info["error"], "http": 400}
+        attachment = {"filename": info["filename"],
+                      "data": info["path"].read_bytes()}
+    st = mailer_mod.status()
+    if not st["configured"]:
+        return {"error": "email is not configured — missing "
+                         + ", ".join(st["missing"]) + " in .env",
+                "http": 400}
+    try:
+        record = mailer_mod.send(to, subject, body, attachment)
+    except RuntimeError as exc:
+        return {"error": f"email failed: {exc}", "http": 502}
+    profiles = profiles_mod._load()
+    stored_p = profiles.get(profile_id)
+    stored = next((j for j in (stored_p or {}).get("saved_jobs") or []
+                   if j.get("id") == job_id), None)
+    if stored is not None and stored.get("apply_pack") is not None:
+        stored["apply_pack"]["emailed"] = record
+        profiles_mod._save(profiles)
+    job_status = (stored or {}).get("application_status") or "saved"
+    if job_status == "saved":
+        from . import agents as agents_mod
+        res = agents_mod.set_application_status(
+            profile_id, job_id, "applied",
+            note=f"Application emailed to {to} from PocketProWS "
+                 f"after the client's approval.")
+        if "job" in res:
+            job_status = "applied"
+    return {"emailed": record, "job_status": job_status}
