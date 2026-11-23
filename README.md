@@ -110,7 +110,11 @@ filtered by profile_id — profile A's data never appears in profile B's
 retrieval. PDF text extraction is fault-isolated: a malformed font
 CMap in one document degrades that document's extraction instead of
 failing the upload, and when an upload does fail the response carries
-the real reason, which the UI shows verbatim. Workflow steps: documents → interview → preferences →
+the real reason, which the UI shows verbatim. Certificate titles are
+read from the certificate layout's own anchors (the block above the
+"non-credit course authorized by" line; the program name under a
+Professional Certificate heading), so a Coursera certificate records
+its actual course or program — never the signatory's job title. Workflow steps: documents → interview → preferences →
 job search → applications → follow-up. The resume comes FIRST: the
 client's skills are always the skills used or referenced in the resume
 (recomputed from the documents on every add/replace/delete) — the
