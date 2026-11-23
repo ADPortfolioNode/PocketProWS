@@ -44,10 +44,16 @@ function mockFetch(calls) {
     }
     if (url === "/api/profiles/p1/documents" && method === "POST") {
       calls.push({ url, method, body: opts.body });
+      if (calls.failUpload) {
+        return { ok: false, status: 500,
+                 text: async () => "Internal Server Error",
+                 json: async () => { throw new Error("not json"); } };
+      }
       uploaded = true;
-      return { ok: true, status: 200, json: async () => ({
-        document: DOC,
-        extracted: { skills: ["python"], certifications: [], email: "a@b.c" } }) };
+      const payload = { document: DOC,
+        extracted: { skills: ["python"], certifications: [], email: "a@b.c" } };
+      return { ok: true, status: 200, text: async () => JSON.stringify(payload),
+               json: async () => payload };
     }
     if (url === "/api/profiles/p1/documents") {
       return { ok: true, status: 200,
@@ -93,6 +99,34 @@ describe("document upload", () => {
       expect(calls.length).toBe(1);
       expect(calls[0].body).toBeInstanceOf(FormData);
       expect(container.querySelector(".ppws-doc-msg")?.textContent).toContain("Added");
+    }, { timeout: 3000 });
+    root.unmount();
+  });
+
+  it("reports the server's real failure instead of 'unknown error'", async () => {
+    const calls = [];
+    calls.failUpload = true;
+    vi.stubGlobal("fetch", mockFetch(calls));
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    root.render(<App />);
+    await vi.waitFor(() => {
+      expect(container.querySelector('input[type="file"]')).toBeTruthy();
+    }, { timeout: 3000 });
+    const input = container.querySelector('input[type="file"]');
+    const file = new File(["x"], "resume.pdf", { type: "application/pdf" });
+    Object.defineProperty(input, "files", { value: [file], configurable: true });
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    const uploadBtn = [...container.querySelectorAll("button")]
+      .find((b) => b.textContent === "Upload file");
+    await vi.waitFor(() => { expect(uploadBtn.disabled).toBe(false); }, { timeout: 3000 });
+    uploadBtn.click();
+    await vi.waitFor(() => {
+      const msg = container.querySelector(".ppws-doc-msg")?.textContent || "";
+      expect(msg).toContain("Upload failed");
+      expect(msg).toContain("500");
+      expect(msg).not.toContain("unknown error");
     }, { timeout: 3000 });
     root.unmount();
   });

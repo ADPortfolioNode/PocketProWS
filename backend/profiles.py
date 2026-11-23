@@ -661,7 +661,7 @@ def _parse_tounicode(cmap: bytes) -> dict:
                     cp = ord(base) + code - lo_i
                     if 0 <= cp <= 0x10FFFF:
                         mapping[code] = chr(cp)
-        for lo, arr in re.findall(
+        for lo, hi, arr in re.findall(
                 r"<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*\[([^\]]*)\]", block):
             for i, dst in enumerate(re.findall(r"<([0-9A-Fa-f]+)>", arr)):
                 mapping[int(lo, 16) + i] = _dst(dst)
@@ -690,7 +690,10 @@ def _pdf_font_maps(data: bytes) -> dict:
             except Exception:  # noqa: BLE001
                 dec = raw
             if b"begincmap" in dec or b"beginbf" in dec:
-                cmap_by_obj[num] = _parse_tounicode(dec)
+                try:
+                    cmap_by_obj[num] = _parse_tounicode(dec)
+                except Exception:  # noqa: BLE001 - one malformed CMap must
+                    cmap_by_obj[num] = {}  # never fail the whole upload
         tu = re.search(rb"/ToUnicode\s+(\d+)\s+\d+\s+R", body)
         if tu:
             font_unicode[num] = int(tu.group(1))

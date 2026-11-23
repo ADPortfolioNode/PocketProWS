@@ -107,7 +107,10 @@ digested on upload/replace (TXT/MD, DOCX, PDF best-effort): skills,
 certifications, education, email/phone are extracted into the profile's
 client record and the text is chunked into a dedicated Chroma collection
 filtered by profile_id — profile A's data never appears in profile B's
-retrieval. Workflow steps: documents → interview → preferences →
+retrieval. PDF text extraction is fault-isolated: a malformed font
+CMap in one document degrades that document's extraction instead of
+failing the upload, and when an upload does fail the response carries
+the real reason, which the UI shows verbatim. Workflow steps: documents → interview → preferences →
 job search → applications → follow-up. The resume comes FIRST: the
 client's skills are always the skills used or referenced in the resume
 (recomputed from the documents on every add/replace/delete) — the

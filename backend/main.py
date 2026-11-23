@@ -334,7 +334,11 @@ async def document_add(profile_id: str, file: UploadFile = File(...)):
     if not profiles_mod.get_profile(profile_id):
         raise HTTPException(404, "profile not found")
     data = await file.read()
-    res = profiles_mod.add_document(profile_id, file.filename, data)
+    try:
+        res = profiles_mod.add_document(profile_id, file.filename, data)
+    except Exception as e:  # noqa: BLE001 - the client gets the real reason,
+        raise HTTPException(500,  # never a bare 'unknown error'
+                            f"upload failed while reading {file.filename}: {e}")
     if "error" in res:
         raise HTTPException(_err_status(res["error"]), res["error"])
     return res
