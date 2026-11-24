@@ -7,18 +7,36 @@ deterministic template output and say which provider answered.
 """
 import json
 import os
+import time
+import urllib.error
 import urllib.request
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 TIMEOUT = 30
 
+# Rate limits (HTTP 429) are usually per-minute and clear in seconds:
+# retry the call with these backoffs before the rung fails — the
+# pattern proven in PocketProFSA (Anthony, 2026-11-24: "add the 429
+# retry-with-backoff to PocketProWS"). His live concierge hit a
+# Gemini 429 and dropped straight to quoted material; with the retry,
+# most rate limits clear inside the window and the rung answers.
+RETRY_DELAYS = (3, 9)
+
 
 def _post(url: str, payload: dict, headers: dict) -> dict:
-    req = urllib.request.Request(url, data=json.dumps(payload).encode(),
-                                 headers={"Content-Type": "application/json", **headers})
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-        return json.loads(r.read().decode("utf-8", errors="replace"))
+    delays = list(RETRY_DELAYS)
+    while True:
+        req = urllib.request.Request(url, data=json.dumps(payload).encode(),
+                                     headers={"Content-Type": "application/json", **headers})
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+                return json.loads(r.read().decode("utf-8", errors="replace"))
+        except urllib.error.HTTPError as exc:
+            if exc.code == 429 and delays:
+                time.sleep(delays.pop(0))
+                continue
+            raise
 
 
 def _gemini(prompt: str) -> str:
