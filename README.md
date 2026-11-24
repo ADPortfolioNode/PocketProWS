@@ -190,6 +190,18 @@ forms are still never touched. Settings live in the local `.env` (never in code 
 is the Gmail address, and the password is an app password created in
 the Google account's security settings.
 
+**Submitting an application** (`backend/submission.py`): once a
+job's pack is built — everything collected — the job lead gains a
+**Submit application** button. It opens the submission panel: a
+readiness checklist (pack built, client contact on the letter, a
+document to attach, the application email — found in the posting
+when it carries one, otherwise entered there), the exact message,
+and **Authorize and submit**. The send is the email above; the job
+is recorded as submitted and moves to Applied. A **submission
+agent** scans the pipeline and reports readiness to the concierge
+(ready / needs the application email / needs a pack / submitted) —
+it prepares and reports, and never sends on its own.
+
 Profile-scoped searches run a **disqualifier filter**
 (`backend/disqualify.py`): a job is omitted only when its own stated
 requirements provably fail against the client's record — a degree

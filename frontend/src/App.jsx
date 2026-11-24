@@ -87,7 +87,16 @@ function MinPanel({ id, title, blurb, onOpen }) {
 // "Approve and send" button on that screen sends, and the backend
 // requires the same explicit approval. Nothing sends from the edit
 // step, and nothing ever sends itself.
-function EmailApplication({ profileId, job, pack, docs, clientName, onSent }) {
+function SubmitControl({ job, packs, onSubmit }) {
+  const pk = packs[job.id] || job.apply_pack || null;
+  if (!pk) return null;
+  if (pk.emailed) {
+    return <span className="ppws-submitted">Submitted ✓ — emailed to {pk.emailed.to} on {(pk.emailed.at || "").slice(0, 10)}</span>;
+  }
+  return <button className="btn btn-sm btn-success" onClick={() => onSubmit(job)}>Submit application</button>;
+}
+
+function EmailApplication({ profileId, job, pack, docs, clientName, onSent, submitMode = false }) {
   const [mail, setMail] = useState(null);
   const [to, setTo] = useState("");
   const [subject, setSubject] = useState(`Application for ${job.title} — ${clientName}`);
@@ -96,11 +105,22 @@ function EmailApplication({ profileId, job, pack, docs, clientName, onSent }) {
   const [stage, setStage] = useState("edit");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [ready, setReady] = useState(null);
 
   useEffect(() => {
     fetch("/api/mail/status").then((r) => r.json()).then(setMail)
       .catch(() => setMail({ configured: false, missing: [] }));
   }, []);
+  useEffect(() => {
+    if (!submitMode) return;
+    fetch(`/api/profiles/${profileId}/saved-jobs/${job.id}/submission`)
+      .then((r) => r.json())
+      .then((res) => {
+        setReady(res);
+        if (res && res.application_email) setTo((cur) => cur || res.application_email);
+      })
+      .catch(() => setReady(null));
+  }, [submitMode, profileId, job.id]);
   useEffect(() => { if (!docId && docs.length) setDocId(docs[0].id); }, [docs, docId]);
 
   if (mail === null) {
@@ -109,7 +129,7 @@ function EmailApplication({ profileId, job, pack, docs, clientName, onSent }) {
   if (!mail.configured) {
     return (
       <div className="ppws-email">
-        <p className="mb-1"><strong>Email this application:</strong> email is not configured yet — add {mail.missing && mail.missing.length ? mail.missing.join(", ") : "the POCKETPROWS_SMTP_* settings"} to the app's .env and restart, and this pack can be emailed from here, with your approval on each send.</p>
+        <p className="mb-1"><strong>{submitMode ? "Submit this application:" : "Email this application:"}</strong> email is not configured yet — add {mail.missing && mail.missing.length ? mail.missing.join(", ") : "the POCKETPROWS_SMTP_* settings"} to the app's .env and restart, and this pack can be emailed from here, with your approval on each send.</p>
       </div>
     );
   }
@@ -125,14 +145,21 @@ function EmailApplication({ profileId, job, pack, docs, clientName, onSent }) {
       const res = await r.json().catch(() => ({}));
       if (!r.ok) { setMsg(`Not sent: ${res.detail || `the server returned ${r.status}`}`); setStage("edit"); return; }
       setStage("sent");
-      setMsg(`Emailed to ${res.emailed.to} — this job is now marked Applied.`);
+      setMsg(submitMode ? `Submitted — emailed to ${res.emailed.to} — this job is now marked Applied.` : `Emailed to ${res.emailed.to} — this job is now marked Applied.`);
       if (onSent) onSent();
     } catch { setMsg("Not sent: could not reach the server — check the app is still running."); setStage("edit"); }
     finally { setBusy(false); }
   };
   return (
     <div className="ppws-email">
-      <p className="mb-1"><strong>Email this application</strong> (from {mail.from})</p>
+      <p className="mb-1"><strong>{submitMode ? "Submit this application" : "Email this application"}</strong> (from {mail.from})</p>
+      {submitMode && ready && ready.checks && (
+        <ul className="ppws-submit-checks">
+          {ready.checks.map((c) => (
+            <li key={c.key} className={c.ok ? "is-ok" : "is-missing"}>{c.ok ? "✓" : "—"} {c.label}{c.detail ? ` — ${c.detail}` : ""}</li>
+          ))}
+        </ul>
+      )}
       {pack.emailed && <p className="ppws-email-sent">Already emailed to {pack.emailed.to} on {(pack.emailed.at || "").slice(0, 10)}.</p>}
       {stage === "sent" && <p className="ppws-email-sent">{msg}</p>}
       {stage === "edit" && (
@@ -153,13 +180,13 @@ function EmailApplication({ profileId, job, pack, docs, clientName, onSent }) {
           <label className="ppws-email-field">Cover letter (the email body)
             <textarea className="form-control" rows={8} value={body} onChange={(e) => setBody(e.target.value)} />
           </label>
-          <button className="btn btn-sm ppws-btn-accent" disabled={!to.includes("@")} onClick={() => setStage("review")}>Review send</button>
+          <button className="btn btn-sm ppws-btn-accent" disabled={!to.includes("@")} onClick={() => setStage("review")}>{submitMode ? "Review submission" : "Review send"}</button>
         </>
       )}
       {stage === "review" && (
         <>
-          <p className="mb-1">Send to <strong>{to}</strong> — subject “{subject}” — attachment: {attachName}. This sends a real email from your mailbox.</p>
-          <button className="btn btn-sm ppws-btn-accent" disabled={busy} onClick={send}>{busy ? "Sending…" : "Approve and send"}</button>
+          <p className="mb-1">{submitMode ? <>Submit your application to <strong>{to}</strong> — subject “{subject}” — attachment: {attachName}. This emails your application from your mailbox — the submission for this job.</> : <>Send to <strong>{to}</strong> — subject “{subject}” — attachment: {attachName}. This sends a real email from your mailbox.</>}</p>
+          <button className="btn btn-sm ppws-btn-accent" disabled={busy} onClick={send}>{busy ? "Sending…" : submitMode ? "Authorize and submit" : "Approve and send"}</button>
           <button className="btn btn-sm btn-outline-secondary ms-2" disabled={busy} onClick={() => setStage("edit")}>Back to edit</button>
         </>
       )}
@@ -209,6 +236,7 @@ export default function App() {
   // Apply packs: generated per saved job, expanded inline in the list.
   const [packs, setPacks] = useState({});
   const [openPack, setOpenPack] = useState("");
+  const [submitFor, setSubmitFor] = useState("");
   const [packBusy, setPackBusy] = useState("");
   const [copied, setCopied] = useState("");
 
@@ -388,8 +416,12 @@ export default function App() {
     setChatLog([]);
   };
 
+  const openSubmit = (j) => {
+    setSubmitFor(j.id);
+    if (openPack !== j.id) togglePack(j);
+  };
   const togglePack = async (j) => {
-    if (openPack === j.id) { setOpenPack(""); return; }
+    if (openPack === j.id) { setOpenPack(""); setSubmitFor(""); return; }
     setOpenPack(j.id);
     if (packs[j.id]) return;
     if (j.apply_pack) { setPacks((m) => ({ ...m, [j.id]: j.apply_pack })); return; }
@@ -709,6 +741,7 @@ export default function App() {
                       <ul className="ppws-list ppws-saved-jobs">{status.saved_jobs.map((j) => (
                         <li key={j.id}><span className="ppws-saved-job-text">{j.title} — employer {j.company} · {j.application_status || "saved"}</span>
                           <button className="btn btn-sm ppws-btn-accent" onClick={() => togglePack(j)}>{openPack === j.id ? "Hide apply pack" : j.apply_pack || packs[j.id] ? "View apply pack" : "Apply pack"}</button>
+                          <SubmitControl job={j} packs={packs} onSubmit={openSubmit} />
                           {NEXT_STATUS[j.application_status || "saved"] && <button className="btn btn-sm btn-outline-primary" onClick={() => setJobStatus(j, NEXT_STATUS[j.application_status || "saved"])}>{NEXT_LABEL[j.application_status || "saved"]}</button>}
                           {(j.application_status || "saved") !== "rejected" && (j.application_status || "saved") !== "hired" && <button className="btn btn-sm btn-outline-danger" onClick={() => setJobStatus(j, "rejected")}>Mark rejected</button>}
                           {openPack === j.id && (
@@ -744,7 +777,7 @@ export default function App() {
                                     </div>
                                   ))}
                                   <p className="ppws-pack-note">{packs[j.id].note} <a href={j.url} target="_blank" rel="noreferrer">Open the posting</a></p>
-                                  <EmailApplication profileId={activeId} job={j} pack={packs[j.id]} docs={docs} clientName={active?.client?.name || ""} onSent={() => loadActive(activeId)} />
+                                  <EmailApplication profileId={activeId} job={j} pack={packs[j.id]} docs={docs} clientName={active?.client?.name || ""} onSent={() => loadActive(activeId)} submitMode={submitFor === j.id} />
                                 </>
                               )}
                             </div>
