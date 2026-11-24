@@ -517,13 +517,47 @@ def run_application_agent(profile_id: str) -> dict:
     return _record_run(profile_id, report)
 
 
+def run_submission_agent(profile_id: str) -> dict:
+    """Submission agent run (Anthony, 2026-11-24): scan the saved jobs
+    and report which applications are ready to submit — pack built,
+    application email known — which still need a pack or an email,
+    and which are already submitted. The agent prepares and reports
+    to the concierge; the send itself happens only on the client's
+    authorization (the Submit button or the concierge), never from
+    an agent run."""
+    from . import submission as submission_mod
+    profile = profiles_mod.get_profile(profile_id)
+    if not profile:
+        return {"agent": "submission", "ran_at": _now_iso(),
+                "profile_id": profile_id, "error": "profile not found"}
+    scan = submission_mod.agent_scan(profile)
+    parts = []
+    if scan["ready"]:
+        parts.append(f"{scan['ready']} ready to submit")
+    if scan["needs_recipient"]:
+        parts.append(f"{scan['needs_recipient']} ready but missing "
+                     f"the application email")
+    if scan["needs_pack"]:
+        parts.append(f"{scan['needs_pack']} still need an apply pack")
+    if scan["submitted"]:
+        parts.append(f"{scan['submitted']} already submitted")
+    summary = ("Submission scan: "
+               + (", ".join(parts) if parts else "no saved jobs yet") + ".")
+    report = {"agent": "submission", "ran_at": _now_iso(),
+              "profile_id": profile_id, "summary": summary,
+              "scan": {k: scan[k] for k in ("total", "submitted", "ready",
+                                            "needs_recipient", "needs_pack")}}
+    return _record_run(profile_id, report)
+
+
 # ------------------------------------------------------------- run + status
 def run_agents(profile_id: str, agents=None, follow_up_days: int = DEFAULT_FOLLOW_UP_DAYS,
                connectors=None, limit: int = 5) -> dict:
     """Run the requested agents (default: search, application, follow_up,
-    resource). The application agent is event-driven (status changes), so
-    its run here is a verification pass over the pipeline's integrity."""
-    wanted = agents or ["search", "application", "follow_up", "resource"]
+    resource, submission). The application agent is event-driven (status
+    changes), so its run here is a verification pass over the pipeline's
+    integrity; the submission agent scans readiness and never sends."""
+    wanted = agents or ["search", "application", "follow_up", "resource", "submission"]
     reports = []
     if "search" in wanted:
         reports.append(run_search_agent(profile_id, connectors=connectors, limit=limit))
@@ -533,6 +567,8 @@ def run_agents(profile_id: str, agents=None, follow_up_days: int = DEFAULT_FOLLO
         reports.append(run_follow_up_agent(profile_id, days=follow_up_days))
     if "resource" in wanted:
         reports.append(run_resource_agent(profile_id))
+    if "submission" in wanted:
+        reports.append(run_submission_agent(profile_id))
     return {"profile_id": profile_id, "reports": reports}
 
 

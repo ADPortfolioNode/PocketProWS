@@ -320,6 +320,19 @@ def email_application(profile_id: str, job_id: str, payload: dict):
     return res
 
 
+@app.get("/api/profiles/{profile_id}/saved-jobs/{job_id}/submission")
+def job_submission(profile_id: str, job_id: str):
+    """Submission readiness for one saved job (Anthony, 2026-11-24):
+    is everything collected — pack, contact, document, application
+    email — for the Submit button to send this application on the
+    client's authorization?"""
+    from . import submission as submission_mod
+    res = submission_mod.for_job(profile_id, job_id)
+    if "error" in res:
+        raise HTTPException(res.get("http", 400), res["error"])
+    return res
+
+
 @app.patch("/api/profiles/{profile_id}/saved-jobs/{job_id}/status")
 def application_status_set(profile_id: str, job_id: str, payload: dict):
     res = agents_mod.set_application_status(profile_id, job_id,
