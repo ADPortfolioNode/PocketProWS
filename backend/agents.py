@@ -368,7 +368,13 @@ def check_search_integrity(profile: dict) -> dict:
     seen_ids = set()
     for job in jobs:
         jid = job.get("id") or "(no id)"
-        missing = [f for f in ("id", "title", "company", "source",
+        # "company" is deliberately NOT required here: a post that
+        # does not name its company is flagged per job by the
+        # missing-fields annotation (job_fields), and the pack
+        # already writes around a blank company. Failing the whole
+        # workflow check for it would report a fact about the post
+        # as if the saved record were corrupt.
+        missing = [f for f in ("id", "title", "source",
                                "application_status") if not job.get(f)]
         if missing:
             problems.append(f"saved job {jid}: missing field(s) {', '.join(missing)}")
