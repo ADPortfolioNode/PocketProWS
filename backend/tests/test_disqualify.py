@@ -111,3 +111,31 @@ def test_search_endpoint_omits_and_reports(monkeypatch):
     assert body["omitted"][0]["id"] == "drop1" and "degree" in body["omitted"][0]["reasons"][0]
     saved = client.get(f"/api/profiles/{p['id']}/saved-jobs").json()["saved_jobs"]
     assert [j["id"] for j in saved] == ["keep1"]  # the omitted job was never saved
+
+
+# ------------------------------------------------------- USA only (2026-11-24)
+def _loc_job(location, snippet="Python role."):
+    return {"id": "j2", "title": "Developer", "company": "Acme",
+            "snippet": snippet, "location": location}
+
+
+def test_non_us_locations_omit():
+    for loc in ("Utrecht, Netherlands", "Berlin, Germany", "London",
+                "Toronto, Canada", "Bangalore, India", "Remote - Europe",
+                "EMEA", "Sydney, Australia"):
+        r = disqualify.disqualify_reasons(NO_EDU, _loc_job(loc))
+        assert any("Outside the USA" in x for x in r), loc
+
+
+def test_us_and_unproven_locations_keep():
+    for loc in ("New York, NY", "Austin, TX", "Queens, New York",
+                "United States", "Remote - US", "Remote", "Worldwide",
+                "", "Paris, TX", "London, OH"):
+        r = disqualify.disqualify_reasons(NO_EDU, _loc_job(loc))
+        assert not any("Outside the USA" in x for x in r), loc
+
+
+def test_missing_location_field_keeps():
+    j = {"id": "j3", "title": "Developer", "company": "Acme",
+         "snippet": "Python role."}
+    assert disqualify.disqualify_reasons(NO_EDU, j) == []
