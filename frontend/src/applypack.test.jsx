@@ -87,7 +87,7 @@ describe("apply pack", () => {
     const root = createRoot(container);
     root.render(<App />);
     await vi.waitFor(() => {
-      expect(container.querySelectorAll(".ppws-steps .ppws-step").length).toBe(6);
+      expect(container.querySelectorAll(".ppws-rail-step").length).toBe(6);
     }, { timeout: 3000 });
     const openBtn = [...container.querySelectorAll("#agents button")]
       .find((b) => b.textContent.includes("Open this step"));

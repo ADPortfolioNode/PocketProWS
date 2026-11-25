@@ -72,7 +72,7 @@ function mockFetch(calls, mailStatus) {
 
 async function openPack(container) {
   await vi.waitFor(() => {
-    expect(container.querySelectorAll(".ppws-steps .ppws-step").length).toBe(6);
+    expect(container.querySelectorAll(".ppws-rail-step").length).toBe(6);
   }, { timeout: 3000 });
   [...container.querySelectorAll("#agents button")]
     .find((b) => b.textContent.includes("Open this step")).click();

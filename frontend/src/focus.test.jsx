@@ -60,7 +60,7 @@ async function renderApp() {
   const root = createRoot(container);
   root.render(<App />);
   await vi.waitFor(() => {
-    expect(container.querySelectorAll(".ppws-steps .ppws-step").length).toBe(6);
+    expect(container.querySelectorAll(".ppws-rail-step").length).toBe(6);
   }, { timeout: 3000 });
   return { container, root };
 }
@@ -87,8 +87,10 @@ describe("step focus", () => {
     }
     // No interview answer box while the interview is minimized.
     expect(container.querySelector('input[aria-label="interview answer"]')).toBeNull();
-    // The guidance cards compact once a client is active.
-    expect(container.querySelector(".ppws-howto")?.classList.contains("is-compact")).toBe(true);
+    // The guidance cards leave the screen once a client is active —
+    // the step rail carries the workflow instead.
+    expect(container.querySelector(".ppws-howto")).toBeNull();
+    expect(container.querySelector(".ppws-step-rail")).toBeTruthy();
     root.unmount();
   });
 
