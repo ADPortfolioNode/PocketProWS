@@ -90,6 +90,27 @@ def test_content_fragment_is_woven_not_standalone():
     assert "warm and friendly" not in letter.lower()
 
 
+def test_tone_like_highlights_with_empty_tone_field_never_print():
+    # Deo's live record shape (2026-11-25): the tone answer sits in
+    # highlights and the tone field is empty. The tone must shape
+    # the letter, not be woven into its middle.
+    client, job = _client(), _job()
+    client["cover_letter_tone"] = ""
+    fit = apply_pack.fit_for(client, job)
+    letter = apply_pack.template_letter(client, job, fit)
+    assert "warm and friendly" not in letter.lower()
+    assert apply_pack.lint_letter(client, job, fit, letter) == []
+    facts = apply_pack._facts_block(client, job, fit)
+    assert "Tone on record" in facts and "warm and friendly" in facts
+    assert "Highlights the applicant asked to include: \n" in facts
+    woven = letter.replace(
+        "I would welcome",
+        "I bring a warm and friendly approach to my work.\n\n"
+        "I would welcome")
+    issues = apply_pack.lint_letter(client, job, fit, woven)
+    assert "tone setting is printed" in " ".join(issues)
+
+
 def test_lint_passes_the_fixed_template():
     client, job = _client(), _job()
     fit = apply_pack.fit_for(client, job)
