@@ -9,6 +9,12 @@ which is exactly what the Asura DirectAdmin Python-app host supports.
 Job sources — 6 FREE public APIs (verified live 2026-11-07):
 adzuna, jooble, usajobs (free keys), remotive, remoteok, arbeitnow
 (no key). Indeed / Dice / Monster stay GATED — no public search API.
+Plus websearch (2026-11-24): keyless search over the open web —
+Google first, Bing as the fallback, no key, no account. (Google
+answers some automated clients with a script shell, and
+DuckDuckGo serves a 202 bot-challenge to Python clients; Bing
+answers in about a second, so it carries any search Google's
+page leaves empty.)
 
 Terminology (Anthony, 2026-11-07): the CLIENT is the job seeker — the
 client seeks work; the EMPLOYER is the company posting the job — the
@@ -42,6 +48,7 @@ from .connectors.jooble import JoobleConnector
 from .connectors.remoteok import RemoteOKConnector
 from .connectors.remotive import RemotiveConnector
 from .connectors.usajobs import USAJobsConnector
+from .connectors.websearch import WebSearchConnector
 from .vector_store import upsert_jobs
 
 app = FastAPI(title="PocketProWS", version="0.3.0")
@@ -49,11 +56,12 @@ app = FastAPI(title="PocketProWS", version="0.3.0")
 FREE_CONNECTORS = [
     AdzunaConnector(), JoobleConnector(), USAJobsConnector(),
     RemotiveConnector(), RemoteOKConnector(), ArbeitnowConnector(),
+    WebSearchConnector(),
 ]
 CONNECTORS = FREE_CONNECTORS + [
     GatedConnector("indeed"), GatedConnector("dice"), GatedConnector("monster"),
 ]
-_NO_KEY = {"remotive", "remoteok", "arbeitnow"}
+_NO_KEY = {"remotive", "remoteok", "arbeitnow", "websearch"}
 
 
 @app.get("/api/health")
