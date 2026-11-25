@@ -36,12 +36,13 @@ class RemotiveConnector(BaseConnector):
                 text = f"{x.get('title','')} {x.get('company_name','')} {' '.join(x.get('tags') or [])}"
                 if query and query.lower() not in text.lower():
                     continue
+                description = _clean(x.get("description", ""))
                 jobs.append(Job(
                     id=f"remotive-{x.get('id')}", title=x.get("title", ""),
                     company=x.get("company_name", ""),
                     location=x.get("candidate_required_location", "Remote"),
                     source="remotive", url=x.get("url", ""),
-                    snippet=_clean(x.get("description", ""))[:300],
+                    snippet=description[:300], description=description,
                     salary=str(x.get("salary") or ""),
                 ).as_dict())
                 if len(jobs) >= limit:

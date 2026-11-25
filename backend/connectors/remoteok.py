@@ -38,12 +38,13 @@ class RemoteOKConnector(BaseConnector):
                 salary = ""
                 if x.get("salary_min") or x.get("salary_max"):
                     salary = f"{x.get('salary_min') or ''}-{x.get('salary_max') or ''}"
+                description = _clean(x.get("description", ""))
                 jobs.append(Job(
                     id=f"remoteok-{x.get('id')}", title=x.get("position", ""),
                     company=x.get("company", ""), location="Remote",
                     source="remoteok",
                     url=x.get("apply_url") or x.get("url", ""),
-                    snippet=_clean(x.get("description", ""))[:300],
+                    snippet=description[:300], description=description,
                     salary=salary,
                 ).as_dict())
                 if len(jobs) >= limit:

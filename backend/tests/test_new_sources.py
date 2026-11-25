@@ -56,6 +56,23 @@ def test_arbeitnow_mocked(monkeypatch):
     assert r.json()["total"] == 1
 
 
+def test_arbeitnow_retains_full_description_for_missing_fields(monkeypatch):
+    description = "<p>" + ("Build RAG systems. " * 30) + \
+        "Apply by email to jobs@gamma.example.</p>"
+
+    def fake(*a, **k):
+        return Resp({"data": [{"slug": "ai-engineer-2", "title": "AI Engineer",
+                               "company_name": "Gamma", "location": "Remote",
+                               "url": "https://example.com/j/3", "remote": True,
+                               "description": description, "tags": ["AI"]}]})
+    monkeypatch.setattr(an_mod, "http_get", fake)
+    r = client.get("/api/jobs/search", params={"q": "AI Engineer", "source": "arbeitnow"})
+    job = r.json()["results"][0]["jobs"][0]
+    assert "jobs@gamma.example" in job["description"]
+    assert "jobs@gamma.example" not in job["snippet"]
+    assert job["application_email"] == "jobs@gamma.example"
+
+
 def test_search_scoped_to_profile_saves_jobs():
     # Use remotive mocked so a real search returns a job for the profile.
     def fake(*a, **k):

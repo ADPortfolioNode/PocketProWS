@@ -34,12 +34,13 @@ class ArbeitnowConnector(BaseConnector):
                 text = f"{x.get('title','')} {x.get('company_name','')} {' '.join(x.get('tags') or [])}"
                 if query and query.lower() not in text.lower():
                     continue
+                description = _clean(x.get("description", ""))
                 jobs.append(Job(
                     id=f"arbeitnow-{x.get('slug')}", title=x.get("title", ""),
                     company=x.get("company_name", ""),
                     location=x.get("location", ""),
                     source="arbeitnow", url=x.get("url", ""),
-                    snippet=_clean(x.get("description", ""))[:300],
+                    snippet=description[:300], description=description,
                 ).as_dict())
                 if len(jobs) >= limit:
                     break

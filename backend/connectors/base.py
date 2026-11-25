@@ -18,6 +18,11 @@ class Job:
     url: str = ""
     snippet: str = ""
     salary: str = ""
+    # Full cleaned post description when the board returns one. The
+    # snippet stays the short display/search text; missing-fields
+    # checks use this full text so facts printed after the snippet
+    # cutoff are not invisible.
+    description: str = ""
 
     def as_dict(self):
         return {k: v for k, v in self.__dict__.items()}
