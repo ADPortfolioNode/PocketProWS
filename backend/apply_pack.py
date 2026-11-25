@@ -578,6 +578,7 @@ def email_pack(profile_id: str, job_id: str, to: str, subject: str = "",
         stored["apply_pack"]["emailed"] = record
         profiles_mod._save(profiles)
     job_status = (stored or {}).get("application_status") or "saved"
+    follow_up_due_at = ""
     if job_status == "saved":
         from . import agents as agents_mod
         res = agents_mod.set_application_status(
@@ -586,4 +587,6 @@ def email_pack(profile_id: str, job_id: str, to: str, subject: str = "",
                  f"after the client's approval.")
         if "job" in res:
             job_status = "applied"
-    return {"emailed": record, "job_status": job_status}
+            follow_up_due_at = res["job"].get("follow_up_due_at") or ""
+    return {"emailed": record, "job_status": job_status,
+            "follow_up_due_at": follow_up_due_at}

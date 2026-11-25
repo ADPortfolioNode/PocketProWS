@@ -34,7 +34,7 @@ Every agent run is recorded on the profile (agent_runs, latest first) and
 summarised by profile_status(), which the concierge and the frontend
 Agents view both read. Status answers need no LLM key.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from . import profiles as profiles_mod
 from . import vector_store as vs
@@ -213,6 +213,18 @@ def set_application_status(profile_id: str, job_id: str, status: str,
     job["status_history"].append({"status": status, "at": now, "note": note or ""})
     if status == "applied" and not job.get("applied_at"):
         job["applied_at"] = now
+    if status in ("applied", "interviewing"):
+        # Sent is automatic from here (Anthony, 2026-11-25): stamp
+        # the send, schedule the follow-up, and write its draft NOW
+        # so the follow-up is ready the day it falls due — no agent
+        # run, no manual step.
+        if status == "applied" and not job.get("sent_at"):
+            job["sent_at"] = now
+        due = datetime.now(timezone.utc) + timedelta(days=DEFAULT_FOLLOW_UP_DAYS)
+        job["follow_up_due_at"] = due.isoformat()
+        job["follow_up_draft"] = _draft_follow_up(p, job)
+    elif status in ("offer", "hired", "rejected"):
+        job["follow_up_due_at"] = ""
     profiles_mod._save(profiles)
     return {"job": job,
             "pipeline": application_pipeline(p),
@@ -237,11 +249,14 @@ def follow_up_due(profile: dict, days: int = DEFAULT_FOLLOW_UP_DAYS,
     for job in profile.get("saved_jobs") or []:
         if _job_status(job) not in ("applied", "interviewing"):
             continue
+        scheduled = _parse_iso(job.get("follow_up_due_at") or "")
         last = _parse_iso(job.get("last_status_at") or job.get("applied_at") or "")
-        if last is None:
-            continue
-        if (now - last).days >= days:
-            due.append({**job, "draft": _draft_follow_up(profile, job)})
+        candidates = [t for t in (scheduled,
+                                  last + timedelta(days=days) if last else None)
+                      if t is not None]
+        if candidates and now >= min(candidates):
+            due.append({**job, "draft": job.get("follow_up_draft")
+                        or _draft_follow_up(profile, job)})
     return due
 
 
