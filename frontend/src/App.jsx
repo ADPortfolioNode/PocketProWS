@@ -778,7 +778,7 @@ export default function App() {
                   {status.saved_jobs.length > 0 && (
                     <div><p><strong>Saved jobs — application status:</strong></p>
                       <ul className="ppws-list ppws-saved-jobs">{status.saved_jobs.map((j) => (
-                        <li key={j.id}><span className="ppws-saved-job-text">{j.title} — employer {j.company} · {j.application_status || "saved"}</span>
+                        <li key={j.id}><span className="ppws-saved-job-text">{j.title} — employer {j.company} · {j.application_status || "saved"}{(j.sent_at || j.apply_pack?.emailed) && <span className="ppws-sent"> · SENT ✓{(j.sent_at || j.apply_pack?.emailed?.at || "") ? ` ${(j.sent_at || j.apply_pack?.emailed?.at || "").slice(0, 10)}` : ""}{j.follow_up_due_at ? ` · follow-up ${j.follow_up_due_at.slice(0, 10)}` : ""}</span>}</span>
                           <button className="btn btn-sm ppws-btn-accent" onClick={() => togglePack(j)}>{openPack === j.id ? "Hide apply pack" : j.apply_pack || packs[j.id] ? "View apply pack" : "Apply pack"}</button>
                           <SubmitControl job={j} packs={packs} onSubmit={openSubmit} />
                           {NEXT_STATUS[j.application_status || "saved"] && <button className="btn btn-sm btn-outline-primary" onClick={() => setJobStatus(j, NEXT_STATUS[j.application_status || "saved"])}>{NEXT_LABEL[j.application_status || "saved"]}</button>}

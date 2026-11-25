@@ -633,6 +633,10 @@ body {
   color: var(--ppws-accent);
   font-size: 0.9rem;
 }
+.ppws-sent {
+  color: var(--ppws-accent);
+  font-weight: 600;
+}
 .ppws-submitted {
   color: var(--ppws-accent);
   font-size: 0.85rem;

@@ -296,3 +296,35 @@ def test_saved_job_without_title_still_fails_search_integrity():
     result = agents_mod.check_search_integrity(profile)
     assert result["passed"] is False
     assert "title" in result["problems"][0]
+
+
+def test_marking_applied_automatically_schedules_follow_up():
+    # Sent is automatic (Anthony, 2026-11-25): marking applied
+    # stamps sent_at, schedules the follow-up 7 days out, and
+    # writes the follow-up draft immediately — no agent run needed.
+    pid = _profile()
+    agents_mod.run_search_agent(pid, connectors=[_FakeConnector([_job("j1")])])
+    client.patch(f"/api/profiles/{pid}/saved-jobs/j1/status",
+                 json={"status": "applied"})
+    job = client.get(f"/api/profiles/{pid}/saved-jobs").json()["saved_jobs"][0]
+    assert job["sent_at"]
+    assert job["follow_up_due_at"] > job["sent_at"]
+    assert "following up" in job["follow_up_draft"]
+
+
+def test_scheduled_follow_up_surfaces_when_due():
+    from datetime import datetime, timedelta, timezone
+
+    profile = {"client": {"name": "Test Client"}, "saved_jobs": [{
+        "id": "j9", "title": "React Developer", "company": "Acme",
+        "application_status": "applied", "applied_at": "2026-11-01T00:00:00+00:00",
+        "sent_at": "2026-11-01T00:00:00+00:00",
+        "follow_up_due_at": "2026-11-08T00:00:00+00:00",
+        "follow_up_draft": "Hi, following up…",
+        "last_status_at": "2026-11-01T00:00:00+00:00",
+    }]}
+    before = datetime(2026, 11, 5, tzinfo=timezone.utc)
+    after = datetime(2026, 11, 9, tzinfo=timezone.utc)
+    assert agents_mod.follow_up_due(profile, now=before) == []
+    due = agents_mod.follow_up_due(profile, now=after)
+    assert len(due) == 1 and due[0]["draft"] == "Hi, following up…"
