@@ -224,3 +224,25 @@ def test_enrich_falls_back_to_og_title_company(monkeypatch):
     job = {"title": "Backend Engineer", "company": "", "location": "",
            "salary": "", "description": "x", "url": "https://example.com/j/3"}
     assert ws_mod._enrich_from_post(dict(job))["company"] == "Globex"
+
+
+def test_interviewy_listings_pass_the_guard():
+    assert ws_mod._is_job_listing(
+        "https://interviewy.com/l/Queens", "Five Guys — Queens", "hiring now")
+
+
+def test_interviewy_scoped_pass_runs(monkeypatch):
+    seen = []
+
+    def fake_get(url, **kw):
+        q = (kw.get("params") or {}).get("q", "")
+        seen.append(q)
+        if "site:interviewy.com" in q:
+            return _Resp(PAGE)
+        return _Resp(GENERIC_PAGE)
+
+    monkeypatch.setattr(ws_mod, "http_get", fake_get)
+    ws_mod._CACHE.clear()
+    out = ws_mod.WebSearchConnector().search("React Developer", limit=5)
+    assert any("site:interviewy.com" in q for q in seen)
+    assert out.jobs

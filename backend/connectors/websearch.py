@@ -40,7 +40,7 @@ _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/120.0 Safari/537.36")
 _BOARDS = ("indeed", "linkedin", "glassdoor", "ziprecruiter", "monster",
            "dice", "simplyhired", "careerbuilder", "wellfound", "remoteok",
-           "arbeitnow", "remotive")
+           "arbeitnow", "remotive", "interviewy")
 # Hosts whose pages are job listings by construction (boards and the
 # big applicant-tracking systems employers post on directly).
 _JOB_HOSTS = _BOARDS + ("greenhouse", "lever", "workable", "ashbyhq",
@@ -422,6 +422,13 @@ class WebSearchConnector(BaseConnector):
         scoped = f"site:indeed.com {query} jobs"
         if location:
             scoped += f" {location}"
+        # Interviewy (Anthony, 2026-11-25): its own API is
+        # account-locked (403 without sign-in), so it joins the
+        # same way Indeed does — a scoped web-search pass over
+        # its public listings, parsed like any other post.
+        interviewy = f"site:interviewy.com {query} jobs"
+        if location:
+            interviewy += f" {location}"
         # Google first (Anthony's ask), then Bing scoped to the
         # largest board, then Bing unscoped — each pass only runs
         # while the merged result is still thin, and a failed engine
@@ -439,6 +446,7 @@ class WebSearchConnector(BaseConnector):
 
         for fetch, q in ((self._fetch_google, plain),
                          (self._fetch_bing, scoped),
+                         (self._fetch_bing, interviewy),
                          (self._fetch_bing, plain)):
             if len(jobs) >= 3:
                 break
