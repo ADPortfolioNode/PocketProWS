@@ -79,7 +79,7 @@ async function renderApp() {
   const root = createRoot(container);
   root.render(<App />);
   await vi.waitFor(() => {
-    expect(container.querySelectorAll(".ppws-steps .ppws-step").length).toBe(6);
+    expect(container.querySelectorAll(".ppws-rail-step").length).toBe(6);
   }, { timeout: 3000 });
   // The interview panel (which holds the chat) starts minimized.
   const openBtn = [...container.querySelectorAll("#interview button")]

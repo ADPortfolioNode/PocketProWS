@@ -63,14 +63,20 @@ async function renderApp(withProfile, health) {
   const root = createRoot(container);
   root.render(<App />);
   // Poll until the app has finished its first load (health pill text).
+  // With no client yet, the "How it works" cards onboard; with a
+  // client active, the step rail carries the workflow instead.
   await vi.waitFor(() => {
-    expect(container.textContent).toContain("How it works");
+    expect(container.textContent).toContain("Backend:");
   }, { timeout: 3000 });
   if (withProfile) {
-    // Wait until the profile-scoped panels have loaded too (workflow
-    // steps render only once the active profile has been fetched).
+    // Wait until the profile-scoped panels have loaded too (the rail
+    // renders only once the active profile has been fetched).
     await vi.waitFor(() => {
-      expect(container.querySelectorAll(".ppws-steps .ppws-step").length).toBe(6);
+      expect(container.querySelectorAll(".ppws-rail-step").length).toBe(6);
+    }, { timeout: 3000 });
+  } else {
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain("How it works");
     }, { timeout: 3000 });
   }
   return { container, root };
@@ -113,16 +119,22 @@ describe("workflow card navigation", () => {
     root.unmount();
   });
 
-  it("cards lead to their own workflow panels once a client is active", async () => {
+  it("the step rail leads to each step's panel once a client is active", async () => {
     const { container, root } = await renderApp(true);
     const expected = {
       interview: "#interview", preferences: "#interview", job_search: "#search",
       documents: "#documents", applications: "#agents", follow_up: "#agents",
     };
+    const links = [...container.querySelectorAll(".ppws-rail-link")];
+    expect(links.length).toBe(6);
+    const byStep = Object.fromEntries(
+      Object.entries(LABELS).map(([step, label]) => [
+        step, links.find((a) => a.querySelector(".ppws-rail-name")?.textContent.trim() === label),
+      ])
+    );
     for (const [step, hash] of Object.entries(expected)) {
-      const card = stepCard(container, LABELS[step]);
-      const link = card?.querySelector("a[href]");
-      expect(link, `card ${step} must contain a link`).toBeTruthy();
+      const link = byStep[step];
+      expect(link, `rail step ${step} must exist`).toBeTruthy();
       expect(link.getAttribute("href")).toBe(hash);
       expect(document.querySelector(hash), `target ${hash} for ${step} must exist`).toBeTruthy();
       link.click();
@@ -131,9 +143,9 @@ describe("workflow card navigation", () => {
     root.unmount();
   });
 
-  it("workflow panel step rows link to the same panels", async () => {
+  it("rail step rows link to the same panels", async () => {
     const { container, root } = await renderApp(true);
-    const rows = [...container.querySelectorAll(".ppws-steps .ppws-step-name a[href]")];
+    const rows = [...container.querySelectorAll(".ppws-rail-link[href]")];
     expect(rows.length).toBe(6);
     for (const a of rows) {
       expect(document.querySelector(a.getAttribute("href"))).toBeTruthy();

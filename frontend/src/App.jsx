@@ -81,6 +81,30 @@ function MinPanel({ id, title, blurb, onOpen }) {
   );
 }
 
+// The persistent step rail (redesign, 2026-11-24): the six workflow
+// steps as one always-visible stepper — done, current, upcoming —
+// each step one click from its panel. It replaces the workflow card's
+// step list and the "How it works" cards once a client is active:
+// the workflow, not the marketing, owns the screen.
+function StepRail({ steps, currentStep, onStep, stepTarget }) {
+  return (
+    <nav className="ppws-step-rail" aria-label="Workflow steps">
+      <p className="ppws-rail-label">Workflow</p>
+      <ol className="ppws-rail-steps">
+        {steps.map((s, i) => (
+          <li key={s.step} className={`ppws-rail-step${s.done ? " is-done" : ""}${s.step === currentStep ? " is-current" : ""}`}>
+            <a className="ppws-rail-link" href={stepTarget(s.step)} onClick={() => onStep(s.step)}>
+              <span className="ppws-rail-num" aria-hidden="true">{s.done ? "✓" : i + 1}</span>
+              <span className="ppws-rail-name">{WORKFLOW_LABELS[s.step]}</span>
+              {s.step === currentStep && <span className="ppws-rail-current">Current</span>}
+            </a>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+
 // Email the finished apply pack — the final step of application prep
 // (Anthony, 2026-11-23). Two steps by design: compose, then a review
 // screen naming the exact recipient, subject and attachment; only the
@@ -572,18 +596,22 @@ export default function App() {
         </div>
       </nav>
 
-      <header className="ppws-hero" id="top" style={{ backgroundImage: `url(${HERO_IMAGE})` }}>
+      <header className={`ppws-hero${activeId ? " is-compact" : ""}`} id="top" style={{ backgroundImage: `url(${HERO_IMAGE})` }}>
         <div className="ppws-hero-overlay">
           <div className="container">
             <div className="row align-items-center g-4">
               <div className="col-12 col-lg-7">
                 <p className="ppws-eyebrow">Recruiter Workstation</p>
                 <h1 className="ppws-hero-title">One client. One plan. Every step, guided.</h1>
-                <p className="ppws-hero-sub">PocketProWS keeps each client&rsquo;s interview, documents, job search and follow-ups in one focused workspace — one profile per client, with the workflow laid out step by step.</p>
-                <div className="d-flex flex-wrap gap-2">
-                  <a className="btn ppws-btn-accent btn-lg" href="#client">Choose your client</a>
-                  <a className="btn btn-outline-light btn-lg" href="#search">Search jobs</a>
-                </div>
+                {!activeId && (
+                  <>
+                    <p className="ppws-hero-sub">PocketProWS keeps each client&rsquo;s interview, documents, job search and follow-ups in one focused workspace — one profile per client, with the workflow laid out step by step.</p>
+                    <div className="d-flex flex-wrap gap-2">
+                      <a className="btn ppws-btn-accent btn-lg" href="#client">Choose your client</a>
+                      <a className="btn btn-outline-light btn-lg" href="#search">Search jobs</a>
+                    </div>
+                  </>
+                )}
               </div>
               <div className="col-12 col-lg-5">
                 <div className="ppws-glass-card">
@@ -625,7 +653,8 @@ export default function App() {
         </div>
       </header>
 
-      <section className={`ppws-section ppws-howto${activeId ? " is-compact" : ""}`} aria-label="How it works">
+      {!activeId && (
+      <section className="ppws-section ppws-howto" aria-label="How it works">
         <div className="container">
           <div className="ppws-section-head">
             <p className="ppws-eyebrow ppws-eyebrow-dark">Workflow guidance</p>
@@ -651,9 +680,16 @@ export default function App() {
           </div>
         </div>
       </section>
+      )}
 
       <main className="container ppws-main">
-        <div className="row g-4">
+        <div className="ppws-workspace">
+          {active && active.workflow && (
+            <aside className="ppws-step-rail-wrap">
+              <StepRail steps={active.workflow.steps} currentStep={active.workflow.current_step} onStep={(step) => setFocusPanel(PANEL_FOR_STEP[step])} stepTarget={stepTarget} />
+            </aside>
+          )}
+          <div className="ppws-work-col">
           <div className="col-12 col-lg-5">
             <section className="card ppws-card h-100" id="client">
               <div className="card-body">
@@ -691,13 +727,10 @@ export default function App() {
                   <div className="progress ppws-progress" role="progressbar" aria-label="Workflow progress" aria-valuenow={active.workflow.steps.filter((s) => s.done).length} aria-valuemin={0} aria-valuemax={active.workflow.steps.length}>
                     <div className="ppws-progress-bar" style={{ width: `${active.workflow.steps.length ? Math.round((active.workflow.steps.filter((s) => s.done).length / active.workflow.steps.length) * 100) : 0}%` }} />
                   </div>
-                  <ol className="ppws-steps">{active.workflow.steps.map((s) => (
-                    <li key={s.step} className={`ppws-step${s.done ? " is-done" : ""}${s.step === active.workflow.current_step ? " is-current" : ""}`}>
-                      <span className="ppws-step-dot" aria-hidden="true">{s.done ? "✓" : "○"}</span>
-                      <span className="ppws-step-name"><a className="ppws-step-row-link" href={stepTarget(s.step)} onClick={() => setFocusPanel(PANEL_FOR_STEP[s.step])}>{WORKFLOW_LABELS[s.step]}</a></span>
-                      {s.step === active.workflow.current_step && <span className="badge ppws-current-badge">Current</span>}
-                      {!s.done && (s.step === "applications" || s.step === "follow_up") && <button className="btn btn-sm ppws-btn-accent ms-auto" onClick={() => markStep(s.step)}>Mark done</button>}
-                    </li>))}</ol>
+                  <p className="ppws-workflow-next">Step {active.workflow.steps.filter((s) => s.done).length + 1} of {active.workflow.steps.length}: <strong>{WORKFLOW_LABELS[active.workflow.current_step] || active.workflow.current_step}</strong> — use the step rail on the left to jump to any step.</p>
+                  {active.workflow.steps.filter((s) => !s.done && (s.step === "applications" || s.step === "follow_up")).map((s) => (
+                    <button key={s.step} className="btn btn-sm ppws-btn-accent" onClick={() => markStep(s.step)}>Mark {WORKFLOW_LABELS[s.step]} done</button>
+                  ))}
                 </div>
               </section>
             </div>
@@ -787,78 +820,6 @@ export default function App() {
                 </div>
               </section>
             </div>
-          )}
-
-          {activeId && shownPanel !== "interview" && (
-            <div className="col-12" style={{ order: panelOrder("interview") }}>
-              <MinPanel id="interview" title="Concierge recruiter — interview & preferences" blurb="One question at a time; skills are confirmed from the resume, never typed in." onOpen={() => setFocusPanel("interview")} />
-            </div>
-          )}
-
-          {(!activeId || shownPanel === "interview") && (
-          <div className={activeId ? "col-12" : "col-12 col-lg-7"} style={{ order: panelOrder("interview") }}>
-            <section className={`card ppws-card h-100${focusSection("interview")}`} id="interview">
-              <div className="card-body">
-                <div className="row g-3">
-                  <div className="col-12 col-md-8">
-                    <div className="ppws-concierge-head">
-                      <div className={`ppws-avatar${chatBusy ? " is-thinking" : ""}`} aria-hidden="true"><span className="ppws-avatar-lens" /></div>
-                      <h2 className="ppws-card-title">Concierge recruiter</h2>
-                    </div>
-                    <p>Hi! I&rsquo;m your friendly recruiter concierge. The resume comes first — add it under Documents and I pull the skills from it — then I ask who our client is (the client seeks work, the employer hires) and go one question at a time. Each answer is saved into that profile&rsquo;s resource, and I tell you what I saved. Every question says why I&rsquo;m asking it, and in the chat below you can ask me &ldquo;explain my workflow&rdquo; anytime — I&rsquo;ll walk the whole process and show exactly where this client stands in it.</p>
-                    {activeId && interview && !interview.complete && (
-                      <div className="ppws-interview">
-                        <p><strong>Question {interview.step + 1} of {interview.total}:</strong> {interview.next_question}</p>
-                        {interview.why && <p className="ppws-why">Why I ask: {interview.why}</p>}
-                        <div className="d-flex flex-column flex-sm-row gap-2">
-                          <input className="form-control" aria-label="interview answer" value={interviewA} onChange={(e) => setInterviewA(e.target.value)} placeholder="Your answer…" />
-                          <button className="btn ppws-btn-accent" onClick={answerInterview}>Save answer</button>
-                        </div>
-                      </div>
-                    )}
-                    {activeId && interview?.complete && <p className="alert alert-success ppws-alert" role="status">✓ Interview complete. {interview.summary}</p>}
-                    {!activeId && <p>Add or choose a profile above to start the interview.</p>}
-                    <div className="ppws-chat-log" ref={chatLogRef} aria-label="concierge conversation">
-                      {chatLog.length === 0 && !chatBusy && (
-                        <div className="ppws-chat-empty">
-                          <p className="mb-2">Ask me anything about this client&rsquo;s search — or start with one of these:</p>
-                          <div className="ppws-chat-chips">
-                            {["Explain my workflow", "What jobs match this client's resume?", "How are we doing?", "Remote Python jobs"].map((chip) => (
-                              <button key={chip} type="button" className="btn btn-sm ppws-chip" onClick={() => ask(chip)}>{chip}</button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {chatLog.map((m, i) => (
-                        <div key={i} className={`ppws-msg ${m.role === "user" ? "ppws-msg-user" : "ppws-msg-bot"}`}>
-                          <p style={{ whiteSpace: "pre-line" }} className="mb-0">{m.text}</p>
-                          {m.jobs?.length > 0 && (
-                            <div className="ppws-msg-jobs">
-                              {m.jobs.map((j) => (
-                                <a key={j.id || j.url} className="ppws-job-mini" href={j.url} target="_blank" rel="noreferrer">
-                                  <strong>{j.title}</strong>
-                                  <span>{j.company} · {j.location}</span>
-                                </a>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                      {chatBusy && <div className="ppws-msg ppws-msg-bot ppws-msg-typing">Thinking…</div>}
-                    </div>
-                    <form className="d-flex flex-column flex-sm-row gap-2 mt-2" onSubmit={(e) => { e.preventDefault(); ask(); }}>
-                      <input className="form-control" aria-label="concierge question" value={chatQ} onChange={(e) => setChatQ(e.target.value)} placeholder="Ask about a role, skill or location…" disabled={chatBusy} />
-                      <button className="btn ppws-btn-outline" type="submit" disabled={chatBusy}>{chatBusy ? "Asking…" : "Ask"}</button>
-                      {chatLog.length > 0 && <button className="btn btn-sm btn-link ppws-chat-clear" type="button" onClick={clearChat}>Clear chat</button>}
-                    </form>
-                  </div>
-                  <div className="col-md-4 d-none d-md-block">
-                    <img className="ppws-side-img" src={CONCIERGE_IMAGE} alt="A recruiting team collaborating around a table with laptops" loading="lazy" />
-                  </div>
-                </div>
-              </div>
-            </section>
-          </div>
           )}
 
           {activeId && shownPanel !== "documents" && (
@@ -964,16 +925,91 @@ export default function App() {
             <section className="card ppws-card" id="resources">
               <div className="card-body">
                 <h2 className="ppws-card-title">Resources</h2>
-                <p>Free sources (verified 2026-11-07): Adzuna, Jooble, USAJOBS (free keys) + Remotive, RemoteOK, Arbeitnow (no key). Indeed, Dice and Monster are gated — no public search API. Research doc: <code>your_files/pocketprows-job-board-apis-2026-11-07.md</code>.</p>
+                <p>Free sources (verified 2026-11-07): Adzuna, Jooble, USAJOBS (free keys) + Remotive, RemoteOK, Arbeitnow (no key) + web search — Google first, Bing fallback (no key, added 2026-11-24). Indeed, Dice and Monster are gated — no public search API. Research doc: <code>your_files/pocketprows-job-board-apis-2026-11-07.md</code>.</p>
                 <div className="ppws-source-groups">
                   <p className="ppws-source-group"><span className="ppws-source-group-label">Free — API key:</span> <span className="badge ppws-source-badge">Adzuna</span> <span className="badge ppws-source-badge">Jooble</span> <span className="badge ppws-source-badge">USAJOBS</span></p>
-                  <p className="ppws-source-group"><span className="ppws-source-group-label">Free — no key:</span> <span className="badge ppws-source-badge">Remotive</span> <span className="badge ppws-source-badge">RemoteOK</span> <span className="badge ppws-source-badge">Arbeitnow</span></p>
+                  <p className="ppws-source-group"><span className="ppws-source-group-label">Free — no key:</span> <span className="badge ppws-source-badge">Remotive</span> <span className="badge ppws-source-badge">RemoteOK</span> <span className="badge ppws-source-badge">Arbeitnow</span> <span className="badge ppws-source-badge">Web search</span></p>
                   <p className="ppws-source-group"><span className="ppws-source-group-label">Gated — no public search API:</span> <span className="badge ppws-source-badge is-gated">Indeed</span> <span className="badge ppws-source-badge is-gated">Dice</span> <span className="badge ppws-source-badge is-gated">Monster</span></p>
                 </div>
               </div>
             </section>
           </div>
           )}
+          </div>
+          <aside className="ppws-concierge-dock">
+{activeId && shownPanel !== "interview" && (
+            <div className="col-12" style={{ order: panelOrder("interview") }}>
+              <MinPanel id="interview" title="Concierge recruiter — interview & preferences" blurb="One question at a time; skills are confirmed from the resume, never typed in." onOpen={() => setFocusPanel("interview")} />
+            </div>
+          )}
+
+          {(!activeId || shownPanel === "interview") && (
+          <div className={activeId ? "col-12" : "col-12 col-lg-7"} style={{ order: panelOrder("interview") }}>
+            <section className={`card ppws-card h-100${focusSection("interview")}`} id="interview">
+              <div className="card-body">
+                <div className="row g-3">
+                  <div className="col-12 col-md-8">
+                    <div className="ppws-concierge-head">
+                      <div className={`ppws-avatar${chatBusy ? " is-thinking" : ""}`} aria-hidden="true"><span className="ppws-avatar-lens" /></div>
+                      <h2 className="ppws-card-title">Concierge recruiter</h2>
+                    </div>
+                    <p>Hi! I&rsquo;m your friendly recruiter concierge. The resume comes first — add it under Documents and I pull the skills from it — then I ask who our client is (the client seeks work, the employer hires) and go one question at a time. Each answer is saved into that profile&rsquo;s resource, and I tell you what I saved. Every question says why I&rsquo;m asking it, and in the chat below you can ask me &ldquo;explain my workflow&rdquo; anytime — I&rsquo;ll walk the whole process and show exactly where this client stands in it.</p>
+                    {activeId && interview && !interview.complete && (
+                      <div className="ppws-interview">
+                        <p><strong>Question {interview.step + 1} of {interview.total}:</strong> {interview.next_question}</p>
+                        {interview.why && <p className="ppws-why">Why I ask: {interview.why}</p>}
+                        <div className="d-flex flex-column flex-sm-row gap-2">
+                          <input className="form-control" aria-label="interview answer" value={interviewA} onChange={(e) => setInterviewA(e.target.value)} placeholder="Your answer…" />
+                          <button className="btn ppws-btn-accent" onClick={answerInterview}>Save answer</button>
+                        </div>
+                      </div>
+                    )}
+                    {activeId && interview?.complete && <p className="alert alert-success ppws-alert" role="status">✓ Interview complete. {interview.summary}</p>}
+                    {!activeId && <p>Add or choose a profile above to start the interview.</p>}
+                    <div className="ppws-chat-log" ref={chatLogRef} aria-label="concierge conversation">
+                      {chatLog.length === 0 && !chatBusy && (
+                        <div className="ppws-chat-empty">
+                          <p className="mb-2">Ask me anything about this client&rsquo;s search — or start with one of these:</p>
+                          <div className="ppws-chat-chips">
+                            {["Explain my workflow", "What jobs match this client's resume?", "How are we doing?", "Remote Python jobs"].map((chip) => (
+                              <button key={chip} type="button" className="btn btn-sm ppws-chip" onClick={() => ask(chip)}>{chip}</button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {chatLog.map((m, i) => (
+                        <div key={i} className={`ppws-msg ${m.role === "user" ? "ppws-msg-user" : "ppws-msg-bot"}`}>
+                          <p style={{ whiteSpace: "pre-line" }} className="mb-0">{m.text}</p>
+                          {m.jobs?.length > 0 && (
+                            <div className="ppws-msg-jobs">
+                              {m.jobs.map((j) => (
+                                <a key={j.id || j.url} className="ppws-job-mini" href={j.url} target="_blank" rel="noreferrer">
+                                  <strong>{j.title}</strong>
+                                  <span>{j.company} · {j.location}</span>
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      {chatBusy && <div className="ppws-msg ppws-msg-bot ppws-msg-typing">Thinking…</div>}
+                    </div>
+                    <form className="d-flex flex-column flex-sm-row gap-2 mt-2" onSubmit={(e) => { e.preventDefault(); ask(); }}>
+                      <input className="form-control" aria-label="concierge question" value={chatQ} onChange={(e) => setChatQ(e.target.value)} placeholder="Ask about a role, skill or location…" disabled={chatBusy} />
+                      <button className="btn ppws-btn-outline" type="submit" disabled={chatBusy}>{chatBusy ? "Asking…" : "Ask"}</button>
+                      {chatLog.length > 0 && <button className="btn btn-sm btn-link ppws-chat-clear" type="button" onClick={clearChat}>Clear chat</button>}
+                    </form>
+                  </div>
+                  <div className="col-md-4 d-none d-md-block">
+                    <img className="ppws-side-img" src={CONCIERGE_IMAGE} alt="A recruiting team collaborating around a table with laptops" loading="lazy" />
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+          )}
+
+                    </aside>
         </div>
       </main>
 
