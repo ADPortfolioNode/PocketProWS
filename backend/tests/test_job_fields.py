@@ -49,6 +49,39 @@ def test_post_description_is_used_for_email_fill():
     assert out["missing_fields"] == []
 
 
+def test_email_after_snippet_cutoff_is_filled_from_description():
+    description = ("Build RAG systems. " * 30) + \
+        "Apply by email to jobs@acme.com."
+    job = dict(FULL, snippet=description[:300], description=description)
+    assert "jobs@acme.com" not in job["snippet"]
+    out = annotate(job)
+    assert out["application_email"] == "jobs@acme.com"
+    assert "application email" not in out["missing_fields"]
+
+
+def test_explicit_location_and_salary_in_description_are_filled():
+    job = dict(FULL, location="", salary="",
+               description="Location: Austin, TX. "
+                           "Salary: $120,000 - $150,000 per year. "
+                           "Build RAG systems.")
+    out = annotate(job)
+    assert out["location"] == "Austin, TX"
+    assert out["salary"] == "$120,000 - $150,000 per year"
+    assert "location" not in out["missing_fields"]
+    assert "salary" not in out["missing_fields"]
+
+
+def test_ambiguous_description_text_still_flags_location_and_salary():
+    job = dict(FULL, location="", salary="",
+               description="Our Austin office serves clients; project "
+                           "budgets of $120,000 - $150,000 are common.")
+    out = annotate(job)
+    assert out.get("location", "") == ""
+    assert out.get("salary", "") == ""
+    assert "location" in out["missing_fields"]
+    assert "salary" in out["missing_fields"]
+
+
 def test_direct_application_email_counts_as_present():
     job = dict(FULL, application_email="hiring@acme.com", snippet="Build RAG systems.")
     assert "application email" not in missing_fields(job)

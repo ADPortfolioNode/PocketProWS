@@ -32,11 +32,12 @@ class USAJobsConnector(BaseConnector):
             jobs = []
             for x in r.json().get("SearchResult", {}).get("SearchResultItems", []):
                 d = x.get("MatchedObjectDescriptor", {})
+                summary = d.get("QualificationSummary") or ""
                 jobs.append(Job(
                     id=f"usajobs-{d.get('PositionID')}", title=d.get("PositionTitle", ""),
                     company=d.get("OrganizationName", ""), location=", ".join(d.get("PositionLocationDisplay", [])),
                     source="usajobs", url=d.get("PositionURI", ""),
-                    snippet=(d.get("QualificationSummary") or "")[:300]).as_dict())
+                    snippet=summary[:300], description=summary).as_dict())
             return SearchResult(source=self.name, status="ok", jobs=jobs)
         except Exception as e:  # noqa: BLE001
             return SearchResult(source=self.name, status="error", message=str(e))

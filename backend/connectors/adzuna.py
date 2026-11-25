@@ -34,7 +34,8 @@ class AdzunaConnector(BaseConnector):
                     location=(x.get("location") or {}).get("display_name", ""),
                     source="adzuna", url=x.get("redirect_url", ""),
                     snippet=(x.get("description") or "")[:300],
-                    salary=str(x.get("salary_min") or ""))
+                    salary=str(x.get("salary_min") or ""),
+                    description=(x.get("description") or ""))
                 for x in r.json().get("results", [])
             ]
             return SearchResult(source=self.name, status="ok", jobs=[j.as_dict() for j in jobs])
