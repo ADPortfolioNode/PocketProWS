@@ -273,3 +273,26 @@ def test_concierge_update_my_resume_is_not_a_status_question():
                                        "profile_id": pid})
     assert r.status_code == 200
     assert r.json()["mode"] != "status"
+
+
+def test_saved_job_without_company_passes_search_integrity():
+    # A post that never names its company is flagged per job by the
+    # missing-fields annotation; it must not fail the workflow
+    # integrity check (seen live 2026-11-25: ten websearch jobs).
+    profile = {"saved_jobs": [{
+        "id": "websearch-x1", "title": "React Developer", "company": "",
+        "source": "websearch", "application_status": "saved",
+        "missing_fields": ["company"],
+    }]}
+    result = agents_mod.check_search_integrity(profile)
+    assert result["passed"] is True, result["problems"]
+
+
+def test_saved_job_without_title_still_fails_search_integrity():
+    profile = {"saved_jobs": [{
+        "id": "websearch-x2", "title": "", "company": "Acme",
+        "source": "websearch", "application_status": "saved",
+    }]}
+    result = agents_mod.check_search_integrity(profile)
+    assert result["passed"] is False
+    assert "title" in result["problems"][0]

@@ -161,3 +161,19 @@ def test_snippet_smalltalk_does_not_make_a_listing(monkeypatch):
     r = WebSearchConnector().search("react developer", limit=10)
     assert r.status == "ok"
     assert r.jobs == []
+
+
+def test_split_title_reads_dash_and_pipe_companies():
+    assert ws_mod._split_title("React Developer - Acme Corp") == (
+        "React Developer", "Acme Corp")
+    assert ws_mod._split_title("Backend Engineer | Globex") == (
+        "Backend Engineer", "Globex")
+    assert ws_mod._split_title("AI Engineer at Initech — Indeed") == (
+        "AI Engineer", "Initech")
+
+
+def test_split_title_never_reads_mode_or_board_as_company():
+    assert ws_mod._split_title("React Developer - Remote") == (
+        "React Developer - Remote", "")
+    assert ws_mod._split_title("React Developer - Indeed") == (
+        "React Developer - Indeed", "")

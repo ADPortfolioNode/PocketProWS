@@ -156,16 +156,32 @@ def _real_url(href):
     return href
 
 
+_NOT_COMPANY = set(_BOARDS) | {
+    "remote", "hybrid", "onsite", "on-site", "full-time", "part-time",
+    "contract", "jobs", "careers", "hiring", "apply now",
+}
+
+
 def _split_title(raw):
-    """(job title, company) from a listing title. Only the common
-    'Role at Company' shape is trusted; a trailing board name
-    ('— Indeed') is stripped from the company."""
+    """(job title, company) from a listing title. Trusted shapes:
+    'Role at Company', and a trailing ' - Company' / ' | Company'
+    segment that reads like a name (short, no digits, not a board
+    or a work-mode word). A trailing board name ('— Indeed') is
+    stripped from the company."""
     title, company = raw.strip(), ""
     if " at " in title:
         title, company = title.rsplit(" at ", 1)
         company = re.split(r"\s+[|–—-]\s+", company)[0].strip()
         if company.lower() in _BOARDS:
             company = ""
+        return title.strip(), company
+    parts = re.split(r"\s+[|–—-]\s+", title)
+    if len(parts) >= 2:
+        tail = parts[-1].strip()
+        if (tail and len(tail.split()) <= 5 and not any(c.isdigit() for c in tail)
+                and tail.lower() not in _NOT_COMPANY):
+            company = tail
+            title = " - ".join(parts[:-1])
     return title.strip(), company
 
 
