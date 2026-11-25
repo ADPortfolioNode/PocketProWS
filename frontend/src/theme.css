@@ -1019,6 +1019,36 @@ body {
 .ppws-concierge-dock .ppws-card { height: 100%; }
 .ppws-workflow-next { margin-bottom: 0.6rem; }
 
+/* Letter status badge + actions (2026-11-24): the pack's verdict is
+   visible at a glance, and a letter can be rebuilt in place. */
+.ppws-check-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.2em 0.7em;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+.ppws-check-badge.is-pass {
+  background-color: #1e4634;
+  color: #b9ecd2;
+}
+.ppws-check-badge.is-flagged {
+  background-color: var(--ppws-accent);
+  color: var(--ppws-ink);
+}
+.ppws-check-badge.is-off {
+  background-color: var(--ppws-line);
+  color: var(--ppws-muted);
+}
+.ppws-pack-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
 @media (min-width: 992px) {
   .ppws-workspace {
     display: grid;

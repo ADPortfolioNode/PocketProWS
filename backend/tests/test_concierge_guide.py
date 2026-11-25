@@ -68,4 +68,4 @@ def test_interview_questions_carry_a_why():
 def test_every_interview_question_has_a_why():
     from backend.profiles import INTERVIEW_QUESTIONS
     assert all(q.get("why") for q in INTERVIEW_QUESTIONS)
-    assert len(INTERVIEW_QUESTIONS) == 11
+    assert len(INTERVIEW_QUESTIONS) == 12

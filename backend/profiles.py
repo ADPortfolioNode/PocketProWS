@@ -88,8 +88,11 @@ INTERVIEW_QUESTIONS = [
      "question": "What salary or hourly rate are you aiming for? It's fine to say 'not sure yet'.",
      "why": "Recorded once, then reused in every salary-expectation answer — and never shared anywhere beyond the application itself."},
     {"key": "cover_letter", "field": "cover_letter_highlights",
-     "question": "Last one for now — for cover letters, what should I highlight about you, and what tone do you like? (For example: confident and direct, or warm and friendly.)",
-     "why": "These highlights and this tone are exactly what the apply pack writes the cover letters from."},
+     "question": "For cover letters, what should I highlight about you? (Experience, results, things you've built — whatever matters most.)",
+     "why": "These highlights are content the apply pack writes into the cover letters — they appear in the letter because you asked for them."},
+    {"key": "cover_letter_tone", "field": "cover_letter_tone",
+     "question": "Last one for now — what tone should the cover letters take? (For example: confident and direct, or warm and friendly.)",
+     "why": "The tone is the letter's overall posture — it shapes how every letter reads without ever being printed in one, and the letter check verifies the finished letter actually feels that way."},
 ]
 
 KNOWN_SKILLS = ["python", "fastapi", "flask", "react", "javascript", "typescript",
@@ -597,6 +600,9 @@ def _parse_answer(qkey: str, answer: str, client_data: dict) -> str:
     if qkey == "cover_letter":
         client_data["cover_letter_highlights"] = a
         return "Saved what to highlight in cover letters."
+    if qkey == "cover_letter_tone":
+        client_data["cover_letter_tone"] = a
+        return "Saved the cover-letter tone."
     client_data[qkey] = a
     return f"Saved: {a}."
 

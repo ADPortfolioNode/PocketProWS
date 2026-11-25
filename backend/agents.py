@@ -608,7 +608,7 @@ def profile_status(profile_id: str, follow_up_days: int = DEFAULT_FOLLOW_UP_DAYS
 
 STEP_MEANING = {
     "documents": "the resume goes in first — skills, certifications, education and contact are pulled from it, and everything later (matching, letters, answers) is built from what it says",
-    "interview": "eleven short questions, one at a time, that turn the resume into a person — target roles, place, remote preference, salary, cover-letter highlights",
+    "interview": "twelve short questions, one at a time, that turn the resume into a person — target roles, place, remote preference, salary, cover-letter highlights and tone",
     "preferences": "the interview answers become the search preferences, so every search runs on what this client actually wants",
     "job_search": "the boards are searched with those preferences; postings whose stated requirements would disqualify the client are omitted and reported, the rest are saved here",
     "applications": "each saved job gets an apply pack — fit check, cover letter, draft answers — and a status you move as it progresses; you review and submit, nothing is sent automatically",

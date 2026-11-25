@@ -444,11 +444,9 @@ export default function App() {
     setSubmitFor(j.id);
     if (openPack !== j.id) togglePack(j);
   };
-  const togglePack = async (j) => {
-    if (openPack === j.id) { setOpenPack(""); setSubmitFor(""); return; }
-    setOpenPack(j.id);
-    if (packs[j.id]) return;
-    if (j.apply_pack) { setPacks((m) => ({ ...m, [j.id]: j.apply_pack })); return; }
+  // Build (or rebuild) the pack in place — the Regenerate letter
+  // button re-runs this without closing the panel.
+  const buildPack = async (j) => {
     setPackBusy(j.id);
     try {
       const r = await fetch(`/api/profiles/${activeId}/saved-jobs/${j.id}/apply-pack`, { method: "POST" });
@@ -457,6 +455,14 @@ export default function App() {
     } finally {
       setPackBusy("");
     }
+  };
+
+  const togglePack = async (j) => {
+    if (openPack === j.id) { setOpenPack(""); setSubmitFor(""); return; }
+    setOpenPack(j.id);
+    if (packs[j.id]) return;
+    if (j.apply_pack) { setPacks((m) => ({ ...m, [j.id]: j.apply_pack })); return; }
+    await buildPack(j);
   };
 
   const copyText = async (label, text) => {
@@ -785,23 +791,39 @@ export default function App() {
                                   <p><strong>Fit:</strong> {packs[j.id].fit.summary}
                                     {packs[j.id].fit.matched.length > 0 && <> Matched: {packs[j.id].fit.matched.join(", ")}.</>}
                                     {packs[j.id].fit.missing.length > 0 && <> Not on the resume: {packs[j.id].fit.missing.join(", ")}.</>}</p>
-                                  <p className="ppws-pack-provider">Cover letter written by: {packs[j.id].provider === "template" ? "the built-in template (no LM key configured)" : packs[j.id].provider}</p>
+                                  <p className="ppws-pack-provider">Cover letter written by: {packs[j.id].provider === "template" ? "the built-in template (no LM key configured)" : packs[j.id].provider}
+                                    {packs[j.id].letter_check && (
+                                      packs[j.id].letter_check.checked ? (
+                                        packs[j.id].letter_check.verdict === "pass"
+                                          ? <span className="ppws-check-badge is-pass">✓ LM-checked</span>
+                                          : <span className="ppws-check-badge is-flagged">⚠ LM check found problems</span>
+                                      ) : <span className="ppws-check-badge is-off">Not LM-checked</span>
+                                    )}</p>
                                   {packs[j.id].letter_check && (
                                     packs[j.id].letter_check.checked ? (
                                       packs[j.id].letter_check.verdict === "pass" ? (
                                         <p className="ppws-pack-check">LM check ({packs[j.id].letter_check.provider}): passed — nothing invented, nothing on your record left out.{packs[j.id].letter_check.revised ? " One correction pass was applied first." : ""}</p>
                                       ) : (
                                         <div className="ppws-pack-check is-flagged">
-                                          <p className="mb-1">LM check ({packs[j.id].letter_check.provider}) found problems{packs[j.id].letter_check.revised ? " — the letter above is the corrected version, but these remain:" : ":"}</p>
+                                          <p className="mb-1">LM check ({packs[j.id].letter_check.provider}) found problems{packs[j.id].letter_check.revised ? " — the letter below is the corrected version, but these remain:" : ":"}</p>
                                           <ul className="mb-1">{packs[j.id].letter_check.issues.map((it, ii) => <li key={ii}>{it}</li>)}</ul>
                                         </div>
                                       )
                                     ) : (
-                                      <p className="ppws-pack-check">LM check unavailable ({packs[j.id].letter_check.reason}) — read the letter carefully before sending.</p>
+                                      <p className="ppws-pack-check">LM check unavailable ({packs[j.id].letter_check.reason}) — the basic checks below still ran; read the letter carefully before sending.</p>
                                     )
                                   )}
+                                  {packs[j.id].letter_check?.lint_issues?.length > 0 && (
+                                    <div className="ppws-pack-check is-flagged">
+                                      <p className="mb-1">Basic checks found problems in this letter:</p>
+                                      <ul className="mb-1">{packs[j.id].letter_check.lint_issues.map((it, ii) => <li key={ii}>{it}</li>)}</ul>
+                                    </div>
+                                  )}
                                   <div className="ppws-pack-letter" style={{ whiteSpace: "pre-line" }}>{packs[j.id].cover_letter}</div>
-                                  <button className="btn btn-sm btn-outline-primary" onClick={() => copyText(`letter-${j.id}`, packs[j.id].cover_letter)}>{copied === `letter-${j.id}` ? "Copied ✓" : "Copy cover letter"}</button>
+                                  <div className="ppws-pack-actions">
+                                    <button className="btn btn-sm btn-outline-primary" onClick={() => copyText(`letter-${j.id}`, packs[j.id].cover_letter)}>{copied === `letter-${j.id}` ? "Copied ✓" : "Copy cover letter"}</button>
+                                    <button className="btn btn-sm btn-outline-secondary" disabled={packBusy === j.id} onClick={() => buildPack(j)}>{packBusy === j.id ? "Regenerating…" : "Regenerate letter"}</button>
+                                  </div>
                                   {packs[j.id].answers.map((a, ai) => (
                                     <div key={ai} className="ppws-pack-answer">
                                       <p className="mb-1"><strong>{a.question}</strong></p>
