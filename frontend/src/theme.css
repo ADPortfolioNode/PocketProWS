@@ -1049,21 +1049,6 @@ body {
   margin: 0.5rem 0;
 }
 
-/* Missing-fields flags on search results (2026-11-25): quiet
-   small print under each post — what it does not carry — plus the
-   application email when the posting printed one. */
-.ppws-job-missing {
-  display: block;
-  font-size: 0.85rem;
-  color: var(--ppws-muted);
-}
-.ppws-job-email {
-  display: block;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--ppws-accent-dark);
-}
-
 @media (min-width: 992px) {
   .ppws-workspace {
     display: grid;
@@ -1081,4 +1066,19 @@ body {
     grid-template-columns: 15rem minmax(0, 1fr) 23rem;
   }
   .ppws-concierge-dock { grid-column: auto; position: sticky; top: 4.5rem; }
+}
+
+/* Missing-fields flags on search results (2026-11-25): quiet
+   small print under each post — what it does not carry — plus the
+   application email when the posting printed one. */
+.ppws-job-missing {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--ppws-muted);
+}
+.ppws-job-email {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ppws-accent-dark);
 }
