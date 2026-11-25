@@ -101,6 +101,18 @@ def jobs_search(q: str = "", location: str = "", limit: int = 10, source: str = 
         results.append({"source": r.source, "status": r.status,
                         "message": r.message, "count": len(r.jobs), "jobs": r.jobs})
         all_jobs.extend(r.jobs)
+    # Missing-fields annotation (Anthony, 2026-11-25): every searched
+    # post is flagged for the fields it does not carry, and the
+    # application email is filled when the posting prints one. The
+    # per-source lists and all_jobs share the same dicts, so annotate
+    # through the per-source lists and rebuild all_jobs from them —
+    # the disqualifier, the save and the response all see the same
+    # annotated jobs.
+    if all_jobs:
+        from . import job_fields as jf_mod
+        for res in results:
+            res["jobs"] = jf_mod.annotate_jobs(res["jobs"])
+        all_jobs = [j for res in results for j in res["jobs"]]
     # Disqualifier filter (Anthony, 2026-11-22): with a profile in
     # play, omit jobs whose STATED requirements the client's record
     # provably fails (degree level, named certifications, clearance).

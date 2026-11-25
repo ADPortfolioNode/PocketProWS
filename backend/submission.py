@@ -25,10 +25,10 @@ _EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 
 def find_application_email(job: dict) -> str:
     """The posting's own application email, when the saved job carries
-    one (some boards put 'apply by email' in the snippet). Sentence
-    punctuation glued to the address ("…to jobs@acme.com.") is not
-    part of it."""
-    for field in ("snippet", "url", "title", "company"):
+    one (some boards put 'apply by email' in the post description or
+    snippet). Sentence punctuation glued to the address
+    ("…to jobs@acme.com.") is not part of it."""
+    for field in ("description", "snippet", "url", "title", "company"):
         m = _EMAIL.search(str(job.get(field) or ""))
         if m:
             return m.group(0).rstrip(".,;:")

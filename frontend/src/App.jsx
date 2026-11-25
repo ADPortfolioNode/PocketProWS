@@ -906,7 +906,12 @@ export default function App() {
                 {results && results.results.map((s) => (
                   <div key={s.source} className="ppws-source-block"><h3 className="ppws-source-title">{s.source} — {s.status}{s.count ? ` (${s.count})` : ""}</h3>
                     {s.message && <p>{s.message}</p>}
-                    <ul className="ppws-job-list">{s.jobs.map((j) => <li key={j.id}><a href={j.url}>{j.title}</a> — employer {j.company} ({j.location})</li>)}</ul>
+                    <ul className="ppws-job-list">{s.jobs.map((j) => (
+                      <li key={j.id}>
+                        <a href={j.url}>{j.title}</a> — employer {j.company} ({j.location})
+                        {j.application_email && <span className="ppws-job-email"> · Apply by email: {j.application_email}</span>}
+                        {j.missing_fields?.length > 0 && <span className="ppws-job-missing"> · Missing: {j.missing_fields.join(", ")}</span>}
+                      </li>))}</ul>
                   </div>
                 ))}
               </div>
