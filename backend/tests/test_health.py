@@ -10,19 +10,20 @@ def test_health():
     assert r.status_code == 200
     assert r.json()["status"] == "ok"
     assert set(r.json()["sources"]) == {"adzuna", "jooble", "usajobs", "remotive",
-                                         "remoteok", "arbeitnow", "indeed", "dice", "monster"}
+                                         "remoteok", "arbeitnow", "websearch",
+                                         "indeed", "dice", "monster"}
     assert set(r.json()["free_sources"]) == {"adzuna", "jooble", "usajobs", "remotive",
-                                              "remoteok", "arbeitnow"}
+                                              "remoteok", "arbeitnow", "websearch"}
 
 
-def test_sources_lists_all_nine():
+def test_sources_lists_all_ten():
     r = client.get("/api/sources")
     assert r.status_code == 200
     names = [s["name"] for s in r.json()["sources"]]
-    assert len(names) == 9
+    assert len(names) == 10
     free = {s["name"] for s in r.json()["sources"] if s["status"] == "ok"}
-    assert free == {"adzuna", "jooble", "usajobs", "remotive", "remoteok", "arbeitnow"}
+    assert free == {"adzuna", "jooble", "usajobs", "remotive", "remoteok", "arbeitnow", "websearch"}
     gated = {s["name"] for s in r.json()["sources"] if s["status"] == "gated"}
     assert gated == {"indeed", "dice", "monster"}
-    no_key = {s["name"] for s in r.json()["sources"] if s["name"] in ("remotive", "remoteok", "arbeitnow")}
+    no_key = {s["name"] for s in r.json()["sources"] if s["name"] in ("remotive", "remoteok", "arbeitnow", "websearch")}
     assert all(s["key_configured"] for s in r.json()["sources"] if s["name"] in no_key)
