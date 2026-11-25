@@ -331,7 +331,8 @@ export default function App() {
     const d = await fetch(`/api/profiles/${id}/documents`).then((x) => x.json()).catch(() => ({ documents: [] }));
     setDocs(d.documents || []);
     const ch = await fetch(`/api/profiles/${id}/chat`).then((x) => x.json()).catch(() => null);
-    setChatLog(ch?.messages || []);
+    setChatLog((prev) => [...(ch?.messages || []),
+      ...prev.filter((m) => m.role === "topic")]);
     loadStatus(id);
   };
 
@@ -348,6 +349,22 @@ export default function App() {
     const el = chatLogRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [chatLog, chatBusy]);
+
+  // One singular concierge conversation (Anthony, 2026-11-25):
+  // topics are announced in the same chat as the workflow moves,
+  // so the conversation blends seamlessly and both sides always
+  // share the same understanding of what is being discussed.
+  const lastTopicRef = useRef(null);
+  useEffect(() => {
+    const step = active?.workflow?.current_step;
+    if (!activeId || !step || lastTopicRef.current === step) return;
+    lastTopicRef.current = step;
+    const idx = (active.workflow.steps || []).findIndex((s) => s.step === step);
+    setChatLog((log) => [...log, {
+      role: "topic",
+      text: `Topic: ${WORKFLOW_LABELS[step] || step} — step ${idx + 1} of ${(active.workflow.steps || []).length}. We discuss this here, in this one conversation.`,
+    }]);
+  }, [activeId, active?.workflow?.current_step]);
 
   if (!ready) return <main><h1>PocketProWS</h1><p>Starting up…</p></main>;
 
@@ -963,6 +980,19 @@ export default function App() {
           </div>
           )}
           </div>
+          {active && active.workflow && (
+            <aside className="ppws-workflow-side" aria-label="Workflow at a glance">
+              <section className="card ppws-card">
+                <div className="card-body">
+                  <h2 className="ppws-card-title">Workflow at a glance</h2>
+                  <p className="mb-1">Active workflow: <strong>{WORKFLOW_LABELS[active.workflow.current_step] || active.workflow.current_step}</strong></p>
+                  <p className="mb-1">{active.workflow.steps.filter((s) => s.done).length} of {active.workflow.steps.length} steps done.</p>
+                  {status && <p className="mb-1">Pipeline: {Object.entries(status.pipeline.counts).map(([k, v]) => `${v} ${k}`).join(", ") || "no saved jobs yet"}.</p>}
+                  {status && <p className="mb-0">Follow-ups due: {status.follow_ups_due.length}.</p>}
+                </div>
+              </section>
+            </aside>
+          )}
           <aside className="ppws-concierge-dock">
 {activeId && shownPanel !== "interview" && (
             <div className="col-12" style={{ order: panelOrder("interview") }}>
@@ -980,6 +1010,7 @@ export default function App() {
                       <div className={`ppws-avatar${chatBusy ? " is-thinking" : ""}`} aria-hidden="true"><span className="ppws-avatar-lens" /></div>
                       <h2 className="ppws-card-title">Concierge recruiter</h2>
                     </div>
+                    {active?.workflow?.current_step && <p className="ppws-topic-line">Topic: {WORKFLOW_LABELS[active.workflow.current_step] || active.workflow.current_step} · step {(active.workflow.steps || []).findIndex((s) => s.step === active.workflow.current_step) + 1} of {(active.workflow.steps || []).length} — one conversation for every topic.</p>}
                     <p>Hi! I&rsquo;m your friendly recruiter concierge. The resume comes first — add it under Documents and I pull the skills from it — then I ask who our client is (the client seeks work, the employer hires) and go one question at a time. Each answer is saved into that profile&rsquo;s resource, and I tell you what I saved. Every question says why I&rsquo;m asking it, and in the chat below you can ask me &ldquo;explain my workflow&rdquo; anytime — I&rsquo;ll walk the whole process and show exactly where this client stands in it.</p>
                     {activeId && interview && !interview.complete && (
                       <div className="ppws-interview">
@@ -994,7 +1025,7 @@ export default function App() {
                     {activeId && interview?.complete && <p className="alert alert-success ppws-alert" role="status">✓ Interview complete. {interview.summary}</p>}
                     {!activeId && <p>Add or choose a profile above to start the interview.</p>}
                     <div className="ppws-chat-log" ref={chatLogRef} aria-label="concierge conversation">
-                      {chatLog.length === 0 && !chatBusy && (
+                      {chatLog.every((m) => m.role === "topic") && !chatBusy && (
                         <div className="ppws-chat-empty">
                           <p className="mb-2">Ask me anything about this client&rsquo;s search — or start with one of these:</p>
                           <div className="ppws-chat-chips">
@@ -1004,7 +1035,9 @@ export default function App() {
                           </div>
                         </div>
                       )}
-                      {chatLog.map((m, i) => (
+                      {chatLog.map((m, i) => m.role === "topic" ? (
+                        <div key={i} className="ppws-topic-note" role="note">{m.text}</div>
+                      ) : (
                         <div key={i} className={`ppws-msg ${m.role === "user" ? "ppws-msg-user" : "ppws-msg-bot"}`}>
                           <p style={{ whiteSpace: "pre-line" }} className="mb-0">{m.text}</p>
                           {m.jobs?.length > 0 && (
