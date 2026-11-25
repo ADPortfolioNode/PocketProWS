@@ -26,6 +26,7 @@ only claimed when the listing's own text supports it.
 import base64
 import hashlib
 import html as html_mod
+import json
 import re
 import time
 from html.parser import HTMLParser
@@ -279,6 +280,107 @@ def _to_jobs(raw_results, url_fn, location, limit):
     return jobs
 
 
+_LD_JSON = re.compile(
+    r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+    re.I | re.S)
+_OG_TITLE = re.compile(
+    r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)',
+    re.I)
+_TAGS = re.compile(r"<[^>]+>")
+
+
+def _job_posting(page_html):
+    """The schema.org JobPosting a post page carries, or None.
+    Most boards and ATS pages embed one — it is the post's own
+    structured statement of title, company, place and pay."""
+    for block in _LD_JSON.findall(page_html or ""):
+        try:
+            data = json.loads(block)
+        except ValueError:
+            continue
+        candidates = data if isinstance(data, list) else [data]
+        for item in candidates:
+            if not isinstance(item, dict):
+                continue
+            graph = item.get("@graph")
+            if isinstance(graph, list):
+                candidates.extend(g for g in graph if isinstance(g, dict))
+            if str(item.get("@type") or "").lower() == "jobposting":
+                return item
+    return None
+
+
+def _posting_location(posting):
+    loc = posting.get("jobLocation")
+    if isinstance(loc, list):
+        loc = loc[0] if loc else None
+    if isinstance(loc, dict):
+        addr = loc.get("address") if isinstance(loc.get("address"), dict) else {}
+        parts = [addr.get("addressLocality"), addr.get("addressRegion"),
+                 addr.get("addressCountry")]
+        text = ", ".join(str(p).strip() for p in parts if p)
+        return text or str(loc.get("name") or "").strip()
+    return str(loc or "").strip()
+
+
+def _posting_salary(posting):
+    sal = posting.get("baseSalary")
+    if not isinstance(sal, dict):
+        return ""
+    value = sal.get("value")
+    if isinstance(value, dict):
+        amount = value.get("value")
+        if amount in (None, "") and value.get("minValue") is not None:
+            amount = f"{value.get('minValue')}-{value.get('maxValue')}"
+        unit = str(value.get("unitText") or "").strip().lower()
+    else:
+        amount, unit = value, ""
+    if amount in (None, ""):
+        return ""
+    currency = str(sal.get("currency") or "").strip()
+    text = f"{currency} {amount}".strip()
+    return f"{text} per {unit}" if unit else text
+
+
+def _enrich_from_post(job):
+    """Open the post itself and fill the fields the search result
+    did not carry — title, company, location, salary, description.
+    Fills blanks only, from the post's own structured data; a page
+    that cannot be read leaves the job exactly as it was."""
+    if job.get("company") and job.get("description"):
+        return job
+    try:
+        r = http_get(job["url"], timeout=10,
+                     headers={"User-Agent": _UA,
+                              "Accept-Language": "en-US,en;q=0.9"})
+        r.raise_for_status()
+        page = r.text
+    except Exception:  # noqa: BLE001 - enrichment never sinks a result
+        return job
+    posting = _job_posting(page)
+    if posting:
+        if not job.get("title"):
+            job["title"] = _clean(str(posting.get("title") or ""))
+        org = posting.get("hiringOrganization")
+        if not job.get("company") and isinstance(org, dict):
+            job["company"] = _clean(str(org.get("name") or ""))
+        if not job.get("location"):
+            job["location"] = _posting_location(posting)
+        if not job.get("salary"):
+            job["salary"] = _posting_salary(posting)
+        if not job.get("description"):
+            desc = _clean(_TAGS.sub(" ", str(posting.get("description") or "")))
+            if desc:
+                job["description"] = desc
+    if not job.get("company"):
+        og = _OG_TITLE.search(page or "")
+        if og:
+            _title, company = _split_title(html_mod.unescape(og.group(1)))
+            if company:
+                job["company"] = company
+    return job
+
+
 def _parse_results(page_html, location, limit):
     parser = _BingParser()
     parser.feed(page_html or "")
@@ -348,5 +450,9 @@ class WebSearchConnector(BaseConnector):
         if not answered:
             return SearchResult(source=self.name, status="error",
                                 message=errors[0] if errors else "no engine answered")
+        # A search result rarely carries the company; the post
+        # itself usually does. Read each post for its missing
+        # fields before caching (Anthony, 2026-11-25).
+        jobs = [_enrich_from_post(j) for j in jobs]
         _CACHE[key] = (time.time(), jobs)
         return SearchResult(source=self.name, status="ok", jobs=jobs)

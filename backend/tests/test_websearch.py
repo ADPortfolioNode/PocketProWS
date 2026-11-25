@@ -177,3 +177,50 @@ def test_split_title_never_reads_mode_or_board_as_company():
         "React Developer - Remote", "")
     assert ws_mod._split_title("React Developer - Indeed") == (
         "React Developer - Indeed", "")
+
+
+POST_PAGE = """
+<html><head>
+<script type="application/ld+json">
+{"@context": "https://schema.org", "@type": "JobPosting",
+ "title": "React Developer",
+ "hiringOrganization": {"@type": "Organization", "name": "Acme Corp"},
+ "jobLocation": {"@type": "Place", "address": {
+   "addressLocality": "New York", "addressRegion": "NY",
+   "addressCountry": "US"}},
+ "baseSalary": {"@type": "MonetaryAmount", "currency": "USD",
+   "value": {"@type": "QuantitativeValue", "value": 120000,
+             "unitText": "YEAR"}},
+ "description": "<p>Build <b>React</b> apps. Apply: jobs@acme.example</p>"}
+</script></head><body>post</body></html>
+"""
+
+
+def test_enrich_reads_missing_fields_from_the_post(monkeypatch):
+    monkeypatch.setattr(ws_mod, "http_get",
+                        lambda url, **kw: _Resp(POST_PAGE))
+    job = {"title": "React Developer", "company": "", "location": "",
+           "salary": "", "description": "", "url": "https://example.com/j/1"}
+    out = ws_mod._enrich_from_post(dict(job))
+    assert out["company"] == "Acme Corp"
+    assert out["location"] == "New York, NY, US"
+    assert out["salary"] == "USD 120000 per year"
+    assert "jobs@acme.example" in out["description"]
+
+
+def test_enrich_failure_leaves_job_unchanged(monkeypatch):
+    def boom(url, **kw):
+        raise RuntimeError("blocked")
+    monkeypatch.setattr(ws_mod, "http_get", boom)
+    job = {"title": "React Developer", "company": "", "location": "",
+           "salary": "", "description": "", "url": "https://example.com/j/2"}
+    assert ws_mod._enrich_from_post(dict(job)) == job
+
+
+def test_enrich_falls_back_to_og_title_company(monkeypatch):
+    page = ('<html><head><meta property="og:title" '
+            'content="Backend Engineer at Globex"></head></html>')
+    monkeypatch.setattr(ws_mod, "http_get", lambda url, **kw: _Resp(page))
+    job = {"title": "Backend Engineer", "company": "", "location": "",
+           "salary": "", "description": "x", "url": "https://example.com/j/3"}
+    assert ws_mod._enrich_from_post(dict(job))["company"] == "Globex"
