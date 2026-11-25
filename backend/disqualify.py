@@ -15,6 +15,12 @@ words and facts on the profile:
   client has none on file.
 - CLEARANCE: the posting requires a security clearance; the profile
   has no way to hold one, so it is never on file.
+- USA ONLY (Anthony, 2026-11-24): the posting's stated location is
+  provably outside the USA — it names a non-US country, a major
+  non-US city, or a non-US region (Europe, EMEA, APAC). Judged from
+  the location field only: a bare "Remote", an empty location, or a
+  US signal anywhere in the field (a state name, a ", ST" suffix,
+  "USA" / "United States") is never omitted — unproven either way.
 
 Anything else — years of experience, citizenship, skills the posting
 would like — is NOT filtered: the profile cannot prove it, and the
@@ -92,10 +98,90 @@ _CLEARANCE = re.compile(
 _CLEARANCE_HARD = re.compile(r"(required|must|active|current|hold|possess)", re.I)
 
 
+# ---------------------------------------------------------------- location
+_US_STATES = (
+    "alabama", "alaska", "arizona", "arkansas", "california", "colorado",
+    "connecticut", "delaware", "florida", "georgia", "hawaii", "idaho",
+    "illinois", "indiana", "iowa", "kansas", "kentucky", "louisiana",
+    "maine", "maryland", "massachusetts", "michigan", "minnesota",
+    "mississippi", "missouri", "montana", "nebraska", "nevada",
+    "new hampshire", "new jersey", "new mexico", "new york",
+    "north carolina", "north dakota", "ohio", "oklahoma", "oregon",
+    "pennsylvania", "rhode island", "south carolina", "south dakota",
+    "tennessee", "texas", "utah", "vermont", "virginia", "washington",
+    "west virginia", "wisconsin", "wyoming", "district of columbia",
+)
+_US_STATE_CODES = {
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI",
+    "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI",
+    "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC",
+    "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT",
+    "VT", "VA", "WA", "WV", "WI", "WY", "DC",
+}
+_NON_US = (
+    # countries and country-like names
+    "netherlands", "holland", "germany", "france", "spain", "portugal",
+    "italy", "belgium", "luxembourg", "austria", "switzerland", "poland",
+    "czech", "slovakia", "hungary", "romania", "bulgaria", "croatia",
+    "serbia", "greece", "turkey", "ukraine", "russia", "belarus",
+    "estonia", "latvia", "lithuania", "denmark", "sweden", "norway",
+    "finland", "iceland", "ireland", "united kingdom", "england",
+    "scotland", "wales", "canada", "mexico", "brazil", "argentina",
+    "chile", "colombia", "peru", "venezuela", "india", "pakistan",
+    "bangladesh", "sri lanka", "nepal", "china", "japan", "korea",
+    "taiwan", "vietnam", "thailand", "malaysia", "singapore",
+    "indonesia", "philippines", "australia", "new zealand", "israel",
+    "egypt", "morocco", "nigeria", "kenya", "ghana", "south africa",
+    "united arab emirates", "saudi arabia", "qatar", "kuwait",
+    # major non-US cities (US namesakes are rescued by the US checks)
+    "london", "berlin", "munich", "hamburg", "frankfurt", "cologne",
+    "amsterdam", "utrecht", "rotterdam", "eindhoven", "paris", "lyon",
+    "madrid", "barcelona", "valencia", "lisbon", "porto", "dublin",
+    "zurich", "geneva", "vienna", "warsaw", "krakow", "prague", "brno",
+    "budapest", "stockholm", "oslo", "copenhagen", "helsinki",
+    "brussels", "antwerp", "milan", "rome", "athens", "istanbul",
+    "ankara", "toronto", "vancouver", "montreal", "ottawa", "calgary",
+    "sydney", "melbourne", "brisbane", "perth", "auckland", "wellington",
+    "bangalore", "bengaluru", "hyderabad", "mumbai", "delhi", "pune",
+    "chennai", "kolkata", "tokyo", "osaka", "seoul", "shanghai",
+    "beijing", "shenzhen", "taipei", "jakarta", "manila", "hanoi",
+    "bangkok", "kuala lumpur", "dubai", "abu dhabi", "riyadh", "doha",
+    "tel aviv", "jerusalem", "cairo", "lagos", "nairobi", "cape town",
+    "johannesburg", "sao paulo", "buenos aires", "santiago", "bogota",
+    "lima", "mexico city",
+    # non-US regions
+    "europe", "emea", "apac", "latam", "european union",
+)
+_NON_US_PAT = re.compile(r"\b(" + "|".join(re.escape(x) for x in _NON_US) + r")\b")
+_US_PAT = re.compile(r"\b(usa|u\.s\.a\.|united states)\b")
+_STATE_NAME_PAT = re.compile(r"\b(" + "|".join(re.escape(x) for x in _US_STATES) + r")\b")
+_STATE_SUFFIX = re.compile(r",\s*([A-Z]{2})\s*$")
+
+
+def _non_us_reason(job: dict):
+    """'Outside the USA' reason when the posting's stated location is
+    provably non-US; None when it is US, bare-remote, or unstated."""
+    loc = (job.get("location") or "").strip()
+    if not loc:
+        return None
+    low = loc.lower()
+    if _US_PAT.search(low) or _STATE_NAME_PAT.search(low):
+        return None
+    suffix = _STATE_SUFFIX.search(loc)
+    if suffix and suffix.group(1) in _US_STATE_CODES:
+        return None
+    if _NON_US_PAT.search(low) or re.search(r"\buk\b", low):
+        return f"Outside the USA — located in {loc}"
+    return None
+
+
 def disqualify_reasons(client: dict, job: dict) -> list:
     """The reasons this posting's stated requirements rule this client
     out — empty when nothing provable rules them out."""
     reasons = []
+    loc_reason = _non_us_reason(job)
+    if loc_reason:
+        reasons.append(loc_reason)
     text = " ".join([job.get("title", ""), job.get("snippet", "")])
     low = text.lower()
 
