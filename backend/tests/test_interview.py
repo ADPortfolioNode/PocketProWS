@@ -39,7 +39,7 @@ def test_full_interview_completes_and_summarises():
                "Python, FastAPI, React, RAG", "Freelance AI Developer 2024–present",
                "IBM AI Engineering", "A.A.S. Information Technology, TCI",
                "Queens, NY — remote", "Either", "$100,000",
-               "Highlight my PocketPro RAG apps, confident and direct"]
+               "Highlight my PocketPro RAG apps", "confident and direct"]
     assert len(answers) == len(INTERVIEW_QUESTIONS)
     last = None
     for a in answers:

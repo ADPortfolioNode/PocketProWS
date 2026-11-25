@@ -99,7 +99,7 @@ check — uses the corrected fact. Skills, certifications and education
 are NOT editable there: they come from the client's documents, and
 change only by replacing or re-digesting a document.
 
-The concierge interviews one question at a time (11 questions, identity
+The concierge interviews one question at a time (12 questions, identity
 first), saves each answer, and confirms what it saved. Documents are
 added in two explicit steps — the file picker stages the chosen file,
 the **Upload file** button sends it — and are
