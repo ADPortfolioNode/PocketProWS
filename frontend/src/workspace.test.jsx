@@ -129,4 +129,19 @@ describe("workspace redesign", () => {
     expect(container.querySelector("#workflow .ppws-workflow-next").textContent).toContain("Interview");
     root.unmount();
   });
+
+  it("workflow columns frame the content and the concierge announces its topic", async () => {
+    const { container, root } = await renderApp(true);
+    // Right workflow column: at-a-glance status beside the content.
+    const side = container.querySelector(".ppws-workflow-side");
+    expect(side).toBeTruthy();
+    expect(side.textContent).toContain("Workflow at a glance");
+    expect(side.textContent).toContain("Interview");
+    // The singular concierge chat announces the current topic.
+    expect(container.querySelector(".ppws-topic-line")?.textContent).toContain("Topic:");
+    await vi.waitFor(() => {
+      expect(container.querySelector(".ppws-topic-note")?.textContent).toContain("Topic:");
+    }, { timeout: 3000 });
+    root.unmount();
+  });
 });

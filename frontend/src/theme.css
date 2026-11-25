@@ -1049,23 +1049,55 @@ body {
   margin: 0.5rem 0;
 }
 
+/* Layout (Anthony, 2026-11-25): workflow columns around the
+   content area, the active workflow controls the content
+   section, and the concierge sits at the TOP of the content
+   area — one singular chat for every topic. */
+.ppws-topic-line {
+  color: var(--ppws-muted);
+  font-size: 0.9rem;
+  margin: 0.25rem 0 0.5rem;
+}
+.ppws-topic-note {
+  text-align: center;
+  color: var(--ppws-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.4rem 0.6rem;
+  border-top: 1px dashed var(--ppws-line);
+  border-bottom: 1px dashed var(--ppws-line);
+  margin: 0.5rem 0;
+}
+.ppws-workflow-side { min-width: 0; order: 3; }
+.ppws-concierge-dock { order: 1; }
+.ppws-work-col { order: 2; }
+
 @media (min-width: 992px) {
   .ppws-workspace {
     display: grid;
     grid-template-columns: 15rem minmax(0, 1fr);
+    grid-template-areas:
+      "rail dock"
+      "rail work"
+      "rail side";
     align-items: start;
   }
-  .ppws-step-rail-wrap { position: sticky; top: 4.5rem; }
+  .ppws-step-rail-wrap { grid-area: rail; position: sticky; top: 4.5rem; }
   .ppws-step-rail { padding: 1rem 0.75rem; }
   .ppws-rail-steps { flex-direction: column; overflow-x: visible; }
   .ppws-rail-link { white-space: normal; }
-  .ppws-concierge-dock { grid-column: 1 / -1; }
+  .ppws-concierge-dock { grid-area: dock; }
+  .ppws-work-col { grid-area: work; }
+  .ppws-workflow-side { grid-area: side; }
 }
 @media (min-width: 1200px) {
   .ppws-workspace {
-    grid-template-columns: 15rem minmax(0, 1fr) 23rem;
+    grid-template-columns: 15rem minmax(0, 1fr) 20rem;
+    grid-template-areas:
+      "rail dock dock"
+      "rail work side";
   }
-  .ppws-concierge-dock { grid-column: auto; position: sticky; top: 4.5rem; }
+  .ppws-workflow-side { position: sticky; top: 4.5rem; }
 }
 
 /* Missing-fields flags on search results (2026-11-25): quiet
