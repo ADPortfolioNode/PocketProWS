@@ -313,6 +313,18 @@ def apply_pack_get(profile_id: str, job_id: str):
     return res
 
 
+@app.post("/api/profiles/{profile_id}/saved-jobs/apply-packs/batch")
+def apply_packs_batch(profile_id: str, payload: dict):
+    """Prepare one selected page of saved jobs (Anthony, 2026-11-26):
+    one request for the page, one LM generation call and one LM check
+    call for all selected letters — never one LM round-trip per job."""
+    from . import batch_submissions as batch_mod
+    res = batch_mod.prepare_batch(profile_id, payload.get("job_ids") or [])
+    if "error" in res:
+        raise HTTPException(res.get("http", 400), res["error"])
+    return res
+
+
 @app.get("/api/mail/status")
 def mail_status():
     from . import mailer as mail_mod
@@ -348,6 +360,23 @@ def job_submission(profile_id: str, job_id: str):
     client's authorization?"""
     from . import submission as submission_mod
     res = submission_mod.for_job(profile_id, job_id)
+    if "error" in res:
+        raise HTTPException(res.get("http", 400), res["error"])
+    return res
+
+
+@app.post("/api/profiles/{profile_id}/saved-jobs/submissions/batch")
+def submissions_batch(profile_id: str, payload: dict):
+    """Submit one reviewed page of selected jobs (Anthony, 2026-11-26):
+    the client reviews every recipient, subject and letter on the page,
+    then authorizes the page once (payload confirm: true). The batch
+    validates everything before the first email sends."""
+    from . import batch_submissions as batch_mod
+    if payload.get("confirm") is not True:
+        raise HTTPException(400, "submitting the page requires your explicit "
+                                 "approval for the reviewed submissions (confirm)")
+    res = batch_mod.submit_batch(profile_id, payload.get("submissions") or [],
+                                 payload.get("document_id"))
     if "error" in res:
         raise HTTPException(res.get("http", 400), res["error"])
     return res

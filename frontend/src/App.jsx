@@ -263,6 +263,15 @@ export default function App() {
   const [submitFor, setSubmitFor] = useState("");
   const [packBusy, setPackBusy] = useState("");
   const [copied, setCopied] = useState("");
+  // Page submission (Anthony, 2026-11-26): one selection per job and
+  // one submission for the page — the selected packs are prepared in
+  // one LM batch, reviewed once, then submitted in one request.
+  const [selectedJobs, setSelectedJobs] = useState([]);
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [batchMsg, setBatchMsg] = useState("");
+  const [batchReview, setBatchReview] = useState(null);
+  const [batchDocId, setBatchDocId] = useState("");
+  const [batchMail, setBatchMail] = useState(null);
 
   const loadStatus = async (id) => {
     if (!id) { setStatus(null); return; }
@@ -343,6 +352,14 @@ export default function App() {
   }, []);
 
   useEffect(() => { if (activeId) loadActive(activeId); }, [activeId]);
+
+  // A page selection belongs to one profile's saved jobs — never carry
+  // it across a profile switch.
+  useEffect(() => {
+    setSelectedJobs([]);
+    setBatchReview(null);
+    setBatchMsg("");
+  }, [activeId]);
 
   // Keep the newest chat message in view.
   useEffect(() => {
@@ -480,6 +497,106 @@ export default function App() {
     if (packs[j.id]) return;
     if (j.apply_pack) { setPacks((m) => ({ ...m, [j.id]: j.apply_pack })); return; }
     await buildPack(j);
+  };
+
+  const toggleSelectedJob = (j) => {
+    setSelectedJobs((prev) => {
+      if (prev.includes(j.id)) return prev.filter((id) => id !== j.id);
+      if (prev.length >= 20) {
+        setBatchMsg("One page submission prepares at most 20 jobs — submit this page, then select the next ones.");
+        return prev;
+      }
+      return [...prev, j.id];
+    });
+  };
+
+  const updateBatchItem = (jobId, patch) => {
+    setBatchReview((review) => review ? {
+      ...review,
+      items: review.items.map((item) => item.job_id === jobId ? { ...item, ...patch } : item),
+    } : review);
+  };
+
+  const prepareSelected = async () => {
+    if (!selectedJobs.length || batchBusy) return;
+    setBatchBusy(true);
+    setBatchMsg("Preparing the selected page in one LM batch…");
+    try {
+      const r = await fetch(`/api/profiles/${activeId}/saved-jobs/apply-packs/batch`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job_ids: selectedJobs }),
+      });
+      const res = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setBatchMsg(`Not prepared: ${res.detail || `the server returned ${r.status}`}`);
+        return;
+      }
+      setPacks((m) => ({ ...m, ...(res.packs || {}) }));
+      const clientName = active?.client?.name || "";
+      const items = (res.results || [])
+        .filter((row) => row.status === "prepared")
+        .map((row) => {
+          const pack = res.packs[row.job_id] || {};
+          return {
+            job_id: row.job_id,
+            title: pack.title || row.job_id,
+            company: pack.company || "",
+            to: row.application_email || "",
+            subject: `Application for ${pack.title || "the role"} — ${clientName}`,
+            body: pack.cover_letter || "",
+          };
+        });
+      setBatchReview({ items });
+      setBatchDocId(docs[0]?.id || "");
+      const mail = await fetch("/api/mail/status").then((x) => x.json()).catch(() => ({ configured: false, missing: [] }));
+      setBatchMail(mail);
+      const skipped = res.batch?.skipped || 0;
+      setBatchMsg(`Prepared ${items.length} submission${items.length === 1 ? "" : "s"} in one LM batch${skipped ? `; ${skipped} already-submitted job${skipped === 1 ? " was" : "s were"} skipped` : ""}. Review the page once, then authorize the page submission.`);
+    } catch {
+      setBatchMsg("Not prepared: could not reach the server — check the app is still running.");
+    } finally {
+      setBatchBusy(false);
+    }
+  };
+
+  const submitSelectedPage = async () => {
+    if (!batchReview?.items.length || batchBusy) return;
+    setBatchBusy(true);
+    try {
+      const r = await fetch(`/api/profiles/${activeId}/saved-jobs/submissions/batch`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          confirm: true,
+          document_id: batchDocId || null,
+          submissions: batchReview.items.map((item) => ({
+            job_id: item.job_id, to: item.to, subject: item.subject, body: item.body,
+          })),
+        }),
+      });
+      const res = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setBatchMsg(`Not submitted: ${res.detail || `the server returned ${r.status}`}`);
+        return;
+      }
+      const sentIds = new Set((res.results || []).filter((row) => row.status === "sent").map((row) => row.job_id));
+      const failed = (res.results || []).filter((row) => row.status === "failed");
+      setSelectedJobs((prev) => prev.filter((id) => !sentIds.has(id)));
+      if (failed.length) {
+        setBatchReview((review) => review ? {
+          ...review,
+          items: review.items.filter((item) => !sentIds.has(item.job_id)),
+        } : review);
+        setBatchMsg(`Submitted ${sentIds.size} job${sentIds.size === 1 ? "" : "s"}; ${failed.length} failed: ${failed.map((row) => row.error).join("; ")}`);
+      } else {
+        setBatchReview(null);
+        setBatchMsg(`Submitted the page — ${sentIds.size} application${sentIds.size === 1 ? "" : "s"} emailed and marked Applied.`);
+      }
+      loadActive(activeId);
+    } catch {
+      setBatchMsg("Not submitted: could not reach the server — check the app is still running.");
+    } finally {
+      setBatchBusy(false);
+    }
   };
 
   const copyText = async (label, text) => {
@@ -794,8 +911,40 @@ export default function App() {
                   )}
                   {status.saved_jobs.length > 0 && (
                     <div><p><strong>Saved jobs — application status:</strong></p>
+                      <div className="ppws-batch-submit">
+                        <p className="mb-1"><strong>Page submission:</strong> select jobs below, prepare them in one LM batch, review the page once, then submit the page.</p>
+                        <button className="btn btn-sm ppws-btn-accent" disabled={!selectedJobs.length || batchBusy} onClick={prepareSelected}>{batchBusy ? "Working…" : `Prepare selected submissions (${selectedJobs.length})`}</button>
+                        {batchMsg && <p className="ppws-batch-msg">{batchMsg}</p>}
+                        {batchReview && (
+                          <div className="ppws-batch-review">
+                            <p className="mb-1"><strong>Review this page submission</strong> — every recipient, subject and letter below is exactly what will be sent.</p>
+                            {batchMail && !batchMail.configured && <p className="ppws-email-error">Email is not configured yet — add {batchMail.missing?.length ? batchMail.missing.join(", ") : "the POCKETPROWS_SMTP_* settings"} to the app's .env and restart before submitting this page.</p>}
+                            <label className="ppws-email-field">Attach to every submission
+                              <select className="form-control" value={batchDocId} onChange={(e) => setBatchDocId(e.target.value)}>
+                                <option value="">No attachment</option>
+                                {docs.map((d) => <option key={d.id} value={d.id}>{d.filename || d.title || d.id}</option>)}
+                              </select>
+                            </label>
+                            {batchReview.items.map((item) => (
+                              <div key={item.job_id} className="ppws-batch-item">
+                                <p className="mb-1"><strong>{item.title}</strong>{item.company ? ` — employer ${item.company}` : ""}</p>
+                                <label className="ppws-email-field">To
+                                  <input className="form-control" type="email" value={item.to} onChange={(e) => updateBatchItem(item.job_id, { to: e.target.value })} placeholder="hiring@company.com" />
+                                </label>
+                                <label className="ppws-email-field">Subject
+                                  <input className="form-control" value={item.subject} onChange={(e) => updateBatchItem(item.job_id, { subject: e.target.value })} />
+                                </label>
+                                <label className="ppws-email-field">Cover letter (the email body)
+                                  <textarea className="form-control" rows={6} value={item.body} onChange={(e) => updateBatchItem(item.job_id, { body: e.target.value })} />
+                                </label>
+                              </div>
+                            ))}
+                            <button className="btn btn-sm ppws-btn-accent" disabled={batchBusy || !batchMail?.configured || batchReview.items.some((item) => !item.to.includes("@") || !item.body.trim())} onClick={submitSelectedPage}>{batchBusy ? "Submitting…" : "Authorize and submit selected page"}</button>
+                          </div>
+                        )}
+                      </div>
                       <ul className="ppws-list ppws-saved-jobs">{status.saved_jobs.map((j) => (
-                        <li key={j.id}><span className="ppws-saved-job-text">{j.title} — employer {j.company} · {j.application_status || "saved"}{(j.sent_at || j.apply_pack?.emailed) && <span className="ppws-sent"> · SENT ✓{(j.sent_at || j.apply_pack?.emailed?.at || "") ? ` ${(j.sent_at || j.apply_pack?.emailed?.at || "").slice(0, 10)}` : ""}{j.follow_up_due_at ? ` · follow-up ${j.follow_up_due_at.slice(0, 10)}` : ""}</span>}</span>
+                        <li key={j.id}><label className="ppws-job-select"><input type="checkbox" checked={selectedJobs.includes(j.id)} disabled={!!(j.apply_pack?.emailed || packs[j.id]?.emailed)} onChange={() => toggleSelectedJob(j)} /> Select</label><span className="ppws-saved-job-text">{j.title} — employer {j.company} · {j.application_status || "saved"}{(j.sent_at || j.apply_pack?.emailed) && <span className="ppws-sent"> · SENT ✓{(j.sent_at || j.apply_pack?.emailed?.at || "") ? ` ${(j.sent_at || j.apply_pack?.emailed?.at || "").slice(0, 10)}` : ""}{j.follow_up_due_at ? ` · follow-up ${j.follow_up_due_at.slice(0, 10)}` : ""}</span>}</span>
                           <button className="btn btn-sm ppws-btn-accent" onClick={() => togglePack(j)}>{openPack === j.id ? "Hide apply pack" : j.apply_pack || packs[j.id] ? "View apply pack" : "Apply pack"}</button>
                           <SubmitControl job={j} packs={packs} onSubmit={openSubmit} />
                           {NEXT_STATUS[j.application_status || "saved"] && <button className="btn btn-sm btn-outline-primary" onClick={() => setJobStatus(j, NEXT_STATUS[j.application_status || "saved"])}>{NEXT_LABEL[j.application_status || "saved"]}</button>}
