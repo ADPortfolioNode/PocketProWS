@@ -165,6 +165,48 @@ def _join(words: list, last: str = "and") -> str:
     return ", ".join(words[:-1]) + f" {last} " + words[-1]
 
 
+_TONE_WORDS = {
+    "warm", "friendly", "professional", "confident", "enthusiastic",
+    "personable", "approachable", "upbeat", "energetic", "polished",
+    "formal", "casual", "conversational", "direct", "concise",
+    "humble", "bold", "serious", "sincere", "courteous", "respectful",
+}
+_TONE_CONNECTORS = {"and", "&"}
+
+
+def _tone_like(text: str) -> bool:
+    """True when a short highlights value is really a tone/posture
+    phrase ('warm and friendly') rather than letter content. The old
+    interview stored the tone answer in highlights and left the tone
+    field empty, so equality with the tone field is not enough."""
+    words = re.findall(r"[a-z][a-z'-]*|&", (text or "").lower())
+    if not words or len(words) > 6:
+        return False
+    return (all(w in _TONE_WORDS or w in _TONE_CONNECTORS for w in words)
+            and any(w in _TONE_WORDS for w in words))
+
+
+def _effective_tone(client: dict) -> str:
+    tone = (client.get("cover_letter_tone") or "").strip()
+    if tone:
+        return tone
+    highlights = (client.get("cover_letter_highlights") or "").strip()
+    return highlights if _tone_like(highlights) else ""
+
+
+def _content_highlights(client: dict) -> str:
+    """Highlights that are letter content. Tone text sitting in the
+    highlights field — equal to the tone, or tone-like with the tone
+    field empty — is posture and is never printed."""
+    highlights = (client.get("cover_letter_highlights") or "").strip()
+    tone = (client.get("cover_letter_tone") or "").strip()
+    if highlights and (highlights.rstrip(".").lower()
+                       == tone.rstrip(".").lower()
+                       or (not tone and _tone_like(highlights))):
+        return ""
+    return highlights
+
+
 def template_letter(client: dict, job: dict, fit: dict) -> str:
     name = client.get("name") or "Your Name"
     title = job.get("title") or "the role"
@@ -173,7 +215,7 @@ def template_letter(client: dict, job: dict, fit: dict) -> str:
     skills = [_skill_display(s) for s in
               (fit["matched"] or (client.get("skills") or [])[:5])]
     certs = _certs(client)
-    highlights = (client.get("cover_letter_highlights") or "").strip()
+    highlights = _content_highlights(client)
     contact = " · ".join(x for x in [client.get("email", ""),
                                      _phone_display(client.get("phone", "")),
                                      client.get("linkedin", "")] if x)
@@ -198,12 +240,6 @@ def template_letter(client: dict, job: dict, fit: dict) -> str:
         body = f"{body} {cert_sentence}" if body else cert_sentence
     if body:
         lines += ["", body]
-    tone = (client.get("cover_letter_tone") or "").strip()
-    if highlights and highlights.rstrip(".").lower() == tone.rstrip(".").lower():
-        # The tone text sitting in the highlights field (the old
-        # interview asked both in one question) is posture, not
-        # content — it is never printed in the letter.
-        highlights = ""
     if highlights:
         words = highlights.rstrip(".").split()
         if len(words) <= 6:
@@ -282,8 +318,8 @@ def _lm_prompt(client: dict, job: dict, fit: dict) -> str:
         f"Skills on resume: {', '.join(client.get('skills') or [])}\n"
         f"Certifications: {', '.join(_certs(client))}\n"
         f"Education: {', '.join(client.get('education') or [])}\n"
-        f"Highlights the applicant wants mentioned: {client.get('cover_letter_highlights', '')}\n"
-        f"Preferred tone: {client.get('cover_letter_tone', '') or 'professional'}\n"
+        f"Highlights the applicant wants mentioned: {_content_highlights(client)}\n"
+        f"Preferred tone: {_effective_tone(client) or 'professional'}\n"
         f"Contact: {client.get('email', '')} {client.get('phone', '')}\n\n"
         f"Job title: {job.get('title', '')}\n"
         f"Employer: {job.get('company', '')}\n"
@@ -313,8 +349,8 @@ def _facts_block(client: dict, job: dict, fit: dict) -> str:
         f"Skills on resume: {', '.join(client.get('skills') or [])}\n"
         f"Certifications: {', '.join(_certs(client))}\n"
         f"Education: {', '.join(client.get('education') or [])}\n"
-        f"Highlights the applicant asked to include: {client.get('cover_letter_highlights', '')}\n"
-        f"Tone on record (the letter's overall posture — it must be FELT, never printed): {client.get('cover_letter_tone', '') or 'professional'}\n"
+        f"Highlights the applicant asked to include: {_content_highlights(client)}\n"
+        f"Tone on record (the letter's overall posture — it must be FELT, never printed): {_effective_tone(client) or 'professional'}\n"
         f"Contact on record — email: {client.get('email', '')} · phone: {client.get('phone', '')}\n"
         f"Job: {job.get('title', '')} at {job.get('company', '')} ({job.get('location', '')})\n"
         f"Skills the posting names that the resume MATCHES: {', '.join(fit['matched'])}\n"
@@ -433,8 +469,11 @@ def lint_letter(client: dict, job: dict, fit: dict, letter: str) -> list:
     the fixed template passes all of them."""
     issues = []
     text = letter or ""
-    tone = (client.get("cover_letter_tone") or "").strip().lower()
+    tone = _effective_tone(client).lower().rstrip(".")
     if tone and len(tone.split()) >= 2:
+        if tone in text.lower():
+            issues.append("the tone setting is printed in the letter")
+    elif tone:
         for line in text.splitlines():
             if line.strip().lower().rstrip(".") == tone:
                 issues.append("the tone setting is printed as a "
